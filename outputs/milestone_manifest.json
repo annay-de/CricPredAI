@@ -1,0 +1,22 @@
+{
+  "charter_locked": true,
+  "sources": [
+    {
+      "name": "IPL ball-by-ball dataset",
+      "status": "fallback",
+      "probe_artifact": "artifacts/probes/ipl_probe.json",
+      "fallback": "If raw IPL.csv is too large to commit, the repo uses committed trained artefacts and metadata generated from the dataset."
+    }
+  ],
+  "baseline_ready": true,
+  "primary_metric_schema_ready": true,
+  "run_command": "uv run --with-requirements requirements.txt main.py",
+  "outputs_written": [
+    "outputs/baseline_metric.json",
+    "outputs/primary_metric.json",
+    "outputs/milestone_manifest.json"
+  ],
+  "current_status": "Final submission: source probe, baseline metric, primary metric, and manifest produced by uv run --with-requirements requirements.txt main.py",
+  "generated_at_utc": "2026-05-15T07:09:10.572488+00:00",
+  "is_template": false
+}

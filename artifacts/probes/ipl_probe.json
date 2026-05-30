@@ -1,0 +1,21 @@
+{
+  "source_name": "IPL ball-by-ball dataset",
+  "status": "fallback",
+  "note": "Raw IPL.csv was not present in the repo run. Using committed metadata and model artefacts generated from IPL.csv as the reproducibility fallback.",
+  "metadata_file_checked": "artifacts/metadata.json",
+  "metadata_top_level_keys": [
+    "best_model_by_log_loss",
+    "categorical_features",
+    "cutoff_date",
+    "features",
+    "n_rows",
+    "numeric_features",
+    "outcomes",
+    "players",
+    "roles",
+    "test_rows",
+    "train_rows",
+    "venues",
+    "version"
+  ]
+}

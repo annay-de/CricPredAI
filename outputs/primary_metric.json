@@ -1,0 +1,10 @@
+{
+  "metric_name": "primary_model_log_loss",
+  "value": 1.7136482289192403,
+  "threshold": 1.866995762830869,
+  "passed": true,
+  "unit": "multiclass log loss; lower is better",
+  "model": "xgboost",
+  "notes": "Final primary metric. XGBoost trained on IPL ball-by-ball data, 2008-2025. Beats empirical baseline.",
+  "is_template": false
+}
