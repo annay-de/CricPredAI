@@ -1,4 +1,4 @@
-**ECO 6810 Final Project — Annay De (annay.de_phd25@ashoka.edu.in), Tanmay Singh (tanmay.singh_phd25@ashoka.edu.in), Siddhant Mukherjee (siddhant.mukherjee_phd25@ashoka.edu.in)**
+**ECO 6810 Final Project — Annay De (annay.de_phd25@ashoka.edu.in)**
 
 This project builds a probabilistic decision-support tool for resource allocation under uncertainty. The stakeholder is an IPL franchise strategy unit facing a constrained optimisation problem: which 11 players (from a fixed squad) maximise expected match performance given opponent, venue, pitch, and weather conditions? The tool simulates ball-by-ball match outcomes under different XI configurations, replacing analyst intuition with a calibrated ML model.
 
