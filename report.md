@@ -1,7 +1,7 @@
 # Report: Decision under Uncertainty — IPL Squad Allocation Simulator
 
 **ECO 6810 Final Project**
-Annay De (annay.de_phd25@ashoka.edu.in), Tanmay Singh (tanmay.singh_phd25@ashoka.edu.in), Siddhant Mukherjee (siddhant.mukherjee_phd25@ashoka.edu.in)
+Annay De (annay.de_phd25@ashoka.edu.in)
 
 ---
 
