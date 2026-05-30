@@ -6,9 +6,8 @@
 
 | Field | Value |
 |---|---|
-| Team members | Annay De (annay.de_phd25@ashoka.edu.in), Tanmay Singh (tanmay.singh_phd25@ashoka.edu.in), Siddhant Mukherjee (siddhant.mukherjee_phd25@ashoka.edu.in) |
+| Creator | Annay De (annay.de_phd25@ashoka.edu.in)|
 | Project type | Predictive — Decision Analytics |
-| Estimated hours per person | 50 |
 | Charter version | v3 |
 | Date | 2026-05-08 |
 
