@@ -613,8 +613,8 @@ def render_header() -> None:
                 </div>
             </div>
             <div class="coverage">
-                IPL ball-by-ball archive<br>
-                18 Apr 2008 - 1 May 2026
+                Created by <strong>Annay De</strong><br>
+                IPL ball-by ball data (18 Apr 2008 - 1 May 2026)
             </div>
         </div>
         """,
@@ -627,11 +627,11 @@ def render_match_lab() -> None:
         """
         <div class="hero">
             <div class="eyebrow">models Trained on historical data</div>
-            <h1>Build two teams and simulate, in a stadium. Test the matchup.</h1>
+            <h1>Build two teams, choose a stadium, simulate it a hundred times.</h1>
             <div class="hero-copy">
                 A ball-by-ball IPL simulator trained on 288,051 deliveries.
                 Select a data profile, set the batting order through the toss,
-                and compare one match with a repeated-match distribution, calculated by different Machinf Learning Models.
+                and compare one match with a repeated-match distribution, calculated by different Machine Learning Models.
             </div>
         </div>
         """,
@@ -1170,7 +1170,7 @@ st.markdown(
     <div class="footer">
         <div>CricPred | IPL simulation laboratory</div>
         <div>
-            Built by <span class="creator-name">Annay De</span> |
+            Built by <strong>Annay De</strong>|
             <a href="https://www.linkedin.com/in/annayde/" target="_blank" rel="noopener noreferrer">LinkedIn</a> |
             <a href="https://x.com/AnnayDe_" target="_blank" rel="noopener noreferrer">X</a>
         </div>
