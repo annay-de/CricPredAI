@@ -1,0 +1,19 @@
+{
+  "dataset": "maratheabhishek/ipl-dataset-2008-to-2025",
+  "coverage_end": "2026-05-01",
+  "model": "xgboost",
+  "historical_settled_matches": 1190,
+  "historical_chase_win_rate": 0.5454,
+  "mirror_xi": {
+    "simulations": 100,
+    "batting_first_wins": 50,
+    "chasing_wins": 49,
+    "ties": 1,
+    "chase_win_rate": 0.49
+  },
+  "strength_sensitivity": {
+    "simulations_per_direction": 20,
+    "weak_xi_chasing_strong_xi_win_rate": 0.2,
+    "strong_xi_chasing_weak_xi_win_rate": 0.7
+  }
+}

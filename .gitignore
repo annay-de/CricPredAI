@@ -22,3 +22,9 @@ ENV/
 
 # OS
 .DS_Store
+artifacts/cache/
+Data/IPL.csv
+IPL.csv
+Data/ipl_dataset/
+Data/kaggle/
+work/

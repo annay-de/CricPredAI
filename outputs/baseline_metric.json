@@ -1,6 +1,6 @@
 {
   "metric_name": "baseline_prior_log_loss",
-  "value": 1.866995762830869,
+  "value": 1.8767230517119864,
   "unit": "multiclass log loss; lower is better",
   "model": "baseline_prior",
   "notes": "Baseline uses empirical IPL delivery outcome frequencies. No match-state features used.",

@@ -1,10 +1,10 @@
 {
   "metric_name": "primary_model_log_loss",
-  "value": 1.7136482289192403,
-  "threshold": 1.866995762830869,
+  "value": 1.8292894450677848,
+  "threshold": 1.8767230517119864,
   "passed": true,
   "unit": "multiclass log loss; lower is better",
   "model": "xgboost",
-  "notes": "Final primary metric. XGBoost trained on IPL ball-by-ball data, 2008-2025. Beats empirical baseline.",
+  "notes": "Final primary metric. Leakage-safe XGBoost trained on chronological IPL ball-by-ball data through the latest committed artifact coverage. Beats empirical baseline.",
   "is_template": false
 }

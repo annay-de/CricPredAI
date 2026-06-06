@@ -1,6 +1,6 @@
 **ECO 6810 Final Project — Annay De (annay.de_phd25@ashoka.edu.in)**
 
-This project builds a probabilistic decision-support tool for resource allocation under uncertainty. The stakeholder is an IPL franchise strategy unit facing a constrained optimisation problem: which 11 players (from a fixed squad) maximise expected match performance given opponent, venue, pitch, and weather conditions? The tool simulates ball-by-ball match outcomes under different XI configurations, replacing analyst intuition with a calibrated ML model.
+This project builds a probabilistic decision-support tool for resource allocation under uncertainty. The stakeholder is an IPL franchise strategy unit facing a constrained optimisation problem: which 11 players maximise expected match performance given opponent, venue, batting order, and historical player form? The tool simulates ball-by-ball match outcomes under different XI configurations using calibrated models.
 
 ---
 
@@ -27,7 +27,7 @@ Live deployment: https://cricpredai3.streamlit.app/
 
 ## What this tool does
 
-The simulator takes a user-specified XI, venue, pitch type, weather, toss outcome, and opponent XI — then runs a ball-by-ball probabilistic simulation of both innings using a trained XGBoost model. The output is a projected scorecard and score progression curve, allowing the analyst to compare expected outcomes across different squad configurations before committing to a selection.
+The simulator takes a user-specified XI, venue, toss outcome, model profile, and opponent XI, then runs a ball-by-ball probabilistic simulation of both innings. The output includes a projected scorecard, score progression, and repeated-match distribution.
 
 This is a decision analytics tool, not a score prediction app. The value is in comparing scenarios, not in producing a single point forecast.
 
@@ -35,22 +35,29 @@ This is a decision analytics tool, not a score prediction app. The value is in c
 
 ## Project framing
 
-The resource-allocation problem: a franchise has a squad of ~20 players and must select 11. Each slot has an opportunity cost. The decision is made under uncertainty about pitch conditions, opponent strategy, and individual player form. This project builds the simulation layer that lets an analyst quantify that uncertainty and stress-test selection choices before the decision moment (24 hours before match).
+The resource-allocation problem: a franchise has a squad of ~20 players and must select 11. Each slot has an opportunity cost. The decision is made under uncertainty about opponent strategy, venue effects, and individual player form. This project builds the simulation layer that lets an analyst quantify that uncertainty and stress-test selection choices before the decision moment (24 hours before match).
 
 ---
 
 ## Improvements in this version
 
+- Leakage-safe pre-delivery features; the outcome delivery is never included in its own predictors
+- Target, runs-required, balls-remaining, required-rate, and pressure features for second innings
+- Chronological match-level train/calibration/test split and validation-selected probability calibration
+- Five-year recency half-life so current IPL scoring patterns matter more than early-era matches
+- Canonical venue and franchise names shared by training and simulation
+- Full-data XGBoost and logistic models instead of tiny random row samples
+- Versioned, compact runtime artifacts; the raw dataset is not needed for simulations
 - Removed unreliable preset team-pool dependency from main workflow
 - User types team names manually; player selection uses dataset-derived autocomplete
-- Adds venue, pitch, weather, toss winner and toss decision as simulation inputs
-- Adds XGBoost alongside Random Forest, Logistic, Extra Trees, HistGradientBoosting, and baseline prior
+- Adds data-backed venue, toss winner, toss decision, model, and temporal profile controls
+- Includes XGBoost, calibrated ensemble, logistic, and empirical baseline simulation paths
 - Empirical calibration/blending prevents ML probability collapse in simulation
 - Correct wide/no-ball handling: bowler locked until six legal balls bowled
 - No-ball, free-hit, wide, bye and leg-bye logic using dataset-derived extra distributions
 - Combined both innings scorecards on one page
 - Superimposed score progression curves for both innings with wicket markers
-- Ball-by-ball verification table and optional commentary
+- Ball-by-ball verification table and downloadable delivery log
 
 ---
 
@@ -83,11 +90,34 @@ web: streamlit run app.py --server.port=$PORT --server.address=0.0.0.0
 
 ## Retraining
 
-To retrain models from scratch, place `IPL.csv` in the root folder and run:
-python train_models.py
+The normal workflow downloads and preprocesses the dataset once:
 
-This regenerates all files under `artifacts/`.
+```bash
+python -m pip install -r requirements-training.txt
+python Data/download_dataset.py
+python train_models.py --data Data/ipl_dataset --profiles modern lifetime
+python validate_simulator.py --data Data/ipl_dataset --profile modern
+python validate_simulator.py --data Data/ipl_dataset --profile lifetime
+```
+
+Prepared features are cached under `artifacts/cache/`. Simulations never load
+the raw dataset; they use the compact files under `artifacts/`.
+
+Runtime profile selection:
+
+```python
+from simulator import load_artifacts
+
+modern_meta, modern_report, modern_models = load_artifacts("modern")
+legends_meta, legends_report, legends_models = load_artifacts("lifetime")
+```
+
+`modern` applies a five-year recency half-life. `lifetime` gives every IPL
+delivery equal weight and is intended for legends and cross-era matches.
+Both profiles have their own XGBoost/logistic models, empirical priors,
+calibration settings, and player metadata under `artifacts/profiles/`.
 
 ## Data
 
-See `Data/README.md` for the full data source, Kaggle download path, and snapshot details.
+See `Data/README.md` for the exact Kaggle source, current date coverage, and
+future-season update workflow.

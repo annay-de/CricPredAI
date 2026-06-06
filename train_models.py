@@ -1,258 +1,643 @@
 """
-CricPredAI V3.0 training pipeline.
-Run locally with IPL.csv present only when you want to retrain artefacts
-The deployed Streamlit app loads artefacts from artifacts/ and does not need IPL.csv
+CricPredAI model training pipeline.
+
+The raw delivery CSV is needed only for retraining. Simulations load the compact
+artifacts produced here and never scan the full dataset.
 """
 from __future__ import annotations
-import json
-from pathlib import Path
-import warnings
-warnings.filterwarnings("ignore")
 
+import argparse
+import json
+import shutil
+import warnings
+from pathlib import Path
+
+import joblib
 import numpy as np
 import pandas as pd
-import joblib
-from model_wrappers import XGBOutcomeWrapper
 from sklearn.compose import ColumnTransformer
+from sklearn.impute import SimpleImputer
+from sklearn.linear_model import SGDClassifier
+from sklearn.metrics import accuracy_score, balanced_accuracy_score, f1_score, log_loss
 from sklearn.pipeline import Pipeline
 from sklearn.preprocessing import OneHotEncoder, StandardScaler
-from sklearn.impute import SimpleImputer
-from sklearn.metrics import log_loss, accuracy_score, f1_score, balanced_accuracy_score
-from sklearn.linear_model import SGDClassifier, LogisticRegression
-from sklearn.ensemble import RandomForestClassifier, ExtraTreesClassifier, HistGradientBoostingClassifier
-from sklearn.calibration import CalibratedClassifierCV
+
+from data_pipeline import (
+    CAT_FEATURES,
+    FEATURES,
+    NUM_FEATURES,
+    OUTCOMES,
+    data_fingerprint,
+    load_dataset_source,
+    prepare_deliveries,
+)
+from model_wrappers import EncodedOutcomeClassifier, FastPipelineOutcomeModel
+from probability import calibrated_blend, empirical_matrix, normalize_array
+
+warnings.filterwarnings("ignore")
 
 try:
     from xgboost import XGBClassifier
+
     HAS_XGB = True
 except Exception:
     HAS_XGB = False
 
 ROOT = Path(__file__).resolve().parent
-DATA = ROOT / "IPL.csv"
-ART = ROOT / "artifacts"
-MODELS = ART / "models"
-ART.mkdir(exist_ok=True)
-MODELS.mkdir(parents=True, exist_ok=True)
-
-OUTCOMES = ["0", "1", "2", "3", "4", "6", "W", "WD", "NB", "LB", "B"]
-NUM_FEATURES = ["innings", "over", "legal_ball", "team_runs", "team_wicket", "batter_runs", "batter_balls"]
-CAT_FEATURES = ["phase", "batting_team", "bowling_team", "batter", "bowler", "venue", "toss_decision"]
-FEATURES = NUM_FEATURES + CAT_FEATURES
-
-def phase_from_over(over: float) -> str:
-    if over < 6:
-        return "powerplay"
-    if over < 16:
-        return "middle"
-    return "death"
+DEFAULT_DATA_CANDIDATES = [
+    ROOT / "Data" / "ipl_dataset",
+    ROOT / "Data" / "IPL.csv",
+    ROOT / "IPL.csv",
+]
 
 
-def outcome_from_row(r: pd.Series) -> str:
-    extra_type = str(r.get("extra_type", "") or "").lower()
-    valid = int(r.get("valid_ball", 1) or 0)
-    wicket = pd.notna(r.get("player_out")) or pd.notna(r.get("wicket_kind"))
-    if valid == 0:
-        if "wide" in extra_type:
-            return "WD"
-        if "no" in extra_type:
-            return "NB"
-    if "legbye" in extra_type:
-        return "LB"
-    if extra_type == "byes" or extra_type == "bye":
-        return "B"
-    if wicket:
-        return "W"
-    rb = int(r.get("runs_batter", 0) or 0)
-    if rb >= 6:
-        return "6"
-    if rb == 5:
-        return "4"
-    if rb in [0, 1, 2, 3, 4]:
-        return str(rb)
-    return "0"
+def parse_args() -> argparse.Namespace:
+    parser = argparse.ArgumentParser(description="Train leakage-safe CricPredAI artifacts.")
+    parser.add_argument(
+        "--data",
+        type=Path,
+        help="Path to a delivery CSV or normalized Kaggle dataset directory.",
+    )
+    parser.add_argument("--artifacts", type=Path, default=ROOT / "artifacts")
+    parser.add_argument(
+        "--max-training-rows",
+        type=int,
+        default=None,
+        help="Optional development cap. Omit for the production full-data run.",
+    )
+    parser.add_argument("--no-cache", action="store_true", help="Rebuild prepared data.")
+    parser.add_argument("--seed", type=int, default=17)
+    parser.add_argument(
+        "--profiles",
+        nargs="+",
+        choices=["modern", "lifetime"],
+        default=["modern", "lifetime"],
+        help="Artifact profiles to train. Modern uses recency weighting; lifetime uses equal weights.",
+    )
+    return parser.parse_args()
 
 
-def prepare(df: pd.DataFrame) -> pd.DataFrame:
-    df = df.copy()
-    df["date"] = pd.to_datetime(df["date"], errors="coerce")
-    df["phase"] = df["over"].fillna(0).astype(float).map(phase_from_over)
-    df["legal_ball"] = df["ball"].fillna(1).astype(int).clip(1, 6)
-    for col in ["team_runs", "team_wicket", "batter_runs", "batter_balls"]:
-        df[col] = pd.to_numeric(df.get(col, 0), errors="coerce").fillna(0)
-    df["outcome"] = df.apply(outcome_from_row, axis=1)
-    for col in CAT_FEATURES:
-        if col not in df:
-            df[col] = "Unknown"
-        df[col] = df[col].fillna("Unknown").astype(str)
-    return df.dropna(subset=["date", "batter", "bowler"])
+def resolve_data_path(explicit: Path | None) -> Path:
+    candidates = [explicit] if explicit else DEFAULT_DATA_CANDIDATES
+    for candidate in candidates:
+        if candidate and candidate.exists():
+            return candidate.resolve()
+    locations = ", ".join(str(path) for path in DEFAULT_DATA_CANDIDATES)
+    raise FileNotFoundError(f"No IPL CSV found. Supply --data PATH or place it at: {locations}")
 
 
-def make_preprocessor():
-    return ColumnTransformer([
-        ("num", Pipeline([("imp", SimpleImputer(strategy="median")), ("sc", StandardScaler())]), NUM_FEATURES),
-        ("cat", OneHotEncoder(handle_unknown="ignore", min_frequency=100), CAT_FEATURES),
-    ])
+def load_prepared(path: Path, cache_dir: Path, use_cache: bool) -> tuple[pd.DataFrame, str]:
+    fingerprint = data_fingerprint(path)
+    cache_path = cache_dir / f"prepared_{fingerprint}.pkl"
+    if use_cache and cache_path.exists():
+        print(f"Loading prepared delivery cache: {cache_path}", flush=True)
+        return pd.read_pickle(cache_path), fingerprint
+
+    print(f"Reading and preparing {path}...", flush=True)
+    prepared = prepare_deliveries(load_dataset_source(path))
+    if use_cache:
+        cache_dir.mkdir(parents=True, exist_ok=True)
+        prepared.to_pickle(cache_path)
+    return prepared, fingerprint
 
 
-def evaluate(name, model, X_test, y_test):
-    proba = model.predict_proba(X_test)
-    classes = list(model.classes_)
-    aligned = np.zeros((len(X_test), len(OUTCOMES))) + 1e-9
-    for j, c in enumerate(classes):
-        if c in OUTCOMES:
-            aligned[:, OUTCOMES.index(c)] = proba[:, j]
-    aligned = aligned / aligned.sum(axis=1, keepdims=True)
-    pred = np.array(OUTCOMES)[aligned.argmax(axis=1)]
+def make_preprocessor() -> ColumnTransformer:
+    return ColumnTransformer(
+        [
+            (
+                "num",
+                Pipeline(
+                    [
+                        ("impute", SimpleImputer(strategy="median")),
+                        ("scale", StandardScaler()),
+                    ]
+                ),
+                NUM_FEATURES,
+            ),
+            (
+                "cat",
+                OneHotEncoder(handle_unknown="ignore", min_frequency=8),
+                CAT_FEATURES,
+            ),
+        ],
+        sparse_threshold=0.2,
+    )
+
+
+def _distribution(group: pd.DataFrame, base: np.ndarray | None = None, strength: float = 0.0) -> dict:
+    counts = (
+        group.groupby("outcome", sort=False)["_profile_weight"]
+        .sum()
+        .reindex(OUTCOMES, fill_value=0)
+        .to_numpy(dtype=float, copy=True)
+    )
+    if base is None:
+        counts += 1.0
+    else:
+        counts += strength * base
+    probabilities = counts / counts.sum()
     return {
-        "model": name,
-        "log_loss": float(log_loss(y_test, aligned, labels=OUTCOMES)),
-        "accuracy": float(accuracy_score(y_test, pred)),
-        "balanced_accuracy": float(balanced_accuracy_score(y_test, pred)),
-        "macro_f1": float(f1_score(y_test, pred, average="macro", zero_division=0)),
+        "n": int(len(group)),
+        "p": {outcome: float(probabilities[index]) for index, outcome in enumerate(OUTCOMES)},
     }
 
 
-def empirical_distributions(df: pd.DataFrame) -> dict:
-    def dist(group):
-        counts = group["outcome"].value_counts().reindex(OUTCOMES, fill_value=0).astype(float) + 1.0
-        p = counts / counts.sum()
-        return p.to_dict()
-    global_prior = dist(df)
-    phase = {k: dist(v) for k, v in df.groupby("phase")}
-    batter_phase = {f"{b}||{ph}": dist(v) for (b, ph), v in df.groupby(["batter", "phase"]) if len(v) >= 25}
-    bowler_phase = {f"{b}||{ph}": dist(v) for (b, ph), v in df.groupby(["bowler", "phase"]) if len(v) >= 25}
+def empirical_distributions(df: pd.DataFrame, weights: np.ndarray | None = None) -> dict:
+    weighted = df.copy()
+    weighted["_profile_weight"] = 1.0 if weights is None else np.asarray(weights, dtype=float)
+    global_entry = _distribution(weighted)
+    global_array = np.array([global_entry["p"][outcome] for outcome in OUTCOMES])
+
+    def grouped(columns: list[str], minimum: int, strength: float) -> dict:
+        result = {}
+        grouper = columns[0] if len(columns) == 1 else columns
+        for key, group in weighted.groupby(grouper, sort=False):
+            if len(group) < minimum:
+                continue
+            key_tuple = key if isinstance(key, tuple) else (key,)
+            result["||".join(map(str, key_tuple))] = _distribution(group, global_array, strength)
+        return result
+
     extra_runs = {}
-    for out in ["WD", "NB", "LB", "B"]:
-        g = df[df["outcome"].eq(out)]
-        vals = g["runs_total"].fillna(1).astype(int).clip(0, 7).tolist() if len(g) else [1]
-        extra_runs[out] = vals[:5000]
-    return {"outcomes": OUTCOMES, "global": global_prior, "phase": phase,
-            "batter_phase": batter_phase, "bowler_phase": bowler_phase, "extra_runs": extra_runs}
+    for outcome in ["WD", "NB", "LB", "B"]:
+        outcome_rows = weighted[weighted["outcome"].eq(outcome)].copy()
+        outcome_rows["_extra_runs"] = (
+            pd.to_numeric(outcome_rows["runs_total"], errors="coerce")
+            .fillna(1)
+            .astype(int)
+            .clip(1, 7)
+        )
+        counts = outcome_rows.groupby("_extra_runs")["_profile_weight"].sum().sort_index()
+        if counts.empty:
+            counts = pd.Series({1: 1})
+        probabilities = counts / counts.sum()
+        extra_runs[outcome] = {str(int(run)): float(probability) for run, probability in probabilities.items()}
+
+    return {
+        "schema_version": 2,
+        "outcomes": OUTCOMES,
+        "global": global_entry,
+        "phase": grouped(["phase"], 1, 200),
+        "innings_phase": grouped(["innings", "phase"], 1, 250),
+        "venue_phase": grouped(["venue", "phase"], 80, 250),
+        "batting_team_phase": grouped(["batting_team", "phase"], 100, 300),
+        "bowling_team_phase": grouped(["bowling_team", "phase"], 100, 300),
+        "batter_phase": grouped(["batter", "phase"], 24, 80),
+        "bowler_phase": grouped(["bowler", "phase"], 30, 100),
+        "extra_runs": extra_runs,
+    }
 
 
-def player_metadata(df: pd.DataFrame) -> dict:
-    players = sorted(set(df["batter"].dropna().astype(str)) | set(df["bowler"].dropna().astype(str)))
-    bat = df.groupby("batter").agg(bat_balls=("valid_ball", "sum"), bat_runs=("runs_batter", "sum"), dismissals=("player_out", lambda s: s.notna().sum())).reset_index()
-    bowl = df.groupby("bowler").agg(bowl_balls=("valid_ball", "sum"), bowl_runs=("runs_bowler", "sum"), bowl_wkts=("bowler_wicket", "sum")).reset_index()
+def player_metadata(df: pd.DataFrame, weights: np.ndarray | None = None) -> dict:
+    weighted = df.copy()
+    weighted["_profile_weight"] = 1.0 if weights is None else np.asarray(weights, dtype=float)
+    weighted["_weighted_bat_ball"] = weighted["_ball_faced"] * weighted["_profile_weight"]
+    weighted["_weighted_bat_run"] = weighted["runs_batter"] * weighted["_profile_weight"]
+    weighted["_weighted_dismissal"] = weighted["_wicket"] * weighted["_profile_weight"]
+    weighted["_weighted_bowl_ball"] = weighted["valid_ball"] * weighted["_profile_weight"]
+    weighted["_weighted_bowl_run"] = weighted["runs_bowler"] * weighted["_profile_weight"]
+    weighted["_weighted_bowl_wicket"] = weighted["_bowler_wicket"] * weighted["_profile_weight"]
+
+    players = sorted(set(df["batter"].astype(str)) | set(df["bowler"].astype(str)))
+    global_bat_rate = float(
+        weighted["_weighted_bat_run"].sum() / max(1, weighted["_weighted_bat_ball"].sum())
+    )
+    global_wicket_rate = float(
+        weighted["_weighted_dismissal"].sum() / max(1, weighted["_weighted_bat_ball"].sum())
+    )
+    global_bowl_rate = float(
+        weighted["_weighted_bowl_run"].sum() / max(1, weighted["_weighted_bowl_ball"].sum())
+    )
+
+    bat = (
+        weighted.groupby("batter")
+        .agg(
+            bat_balls=("_ball_faced", "sum"),
+            weighted_bat_balls=("_weighted_bat_ball", "sum"),
+            weighted_bat_runs=("_weighted_bat_run", "sum"),
+            weighted_dismissals=("_weighted_dismissal", "sum"),
+            avg_position=("bat_pos", "mean") if "bat_pos" in df else ("innings", "size"),
+        )
+        .reset_index()
+    )
+    bowl = (
+        weighted.groupby("bowler")
+        .agg(
+            bowl_balls=("valid_ball", "sum"),
+            weighted_bowl_balls=("_weighted_bowl_ball", "sum"),
+            weighted_bowl_runs=("_weighted_bowl_run", "sum"),
+            weighted_bowl_wkts=("_weighted_bowl_wicket", "sum"),
+        )
+        .reset_index()
+    )
     stats = pd.merge(bat, bowl, left_on="batter", right_on="bowler", how="outer")
     stats["player"] = stats["batter"].fillna(stats["bowler"])
     stats = stats.fillna(0)
+
     roles = {}
-    for _, r in stats.iterrows():
-        player = str(r["player"])
-        bat_balls = float(r.get("bat_balls", 0))
-        bowl_balls = float(r.get("bowl_balls", 0))
-        if bowl_balls >= 120 and bat_balls >= 120:
+    for row in stats.itertuples(index=False):
+        bat_balls = float(row.bat_balls)
+        bowl_balls = float(row.bowl_balls)
+        effective_bat_balls = float(row.weighted_bat_balls)
+        effective_bowl_balls = float(row.weighted_bowl_balls)
+        bat_rate = (
+            float(row.weighted_bat_runs) + 120 * global_bat_rate
+        ) / (effective_bat_balls + 120)
+        dismissal_rate = (
+            float(row.weighted_dismissals) + 120 * global_wicket_rate
+        ) / (effective_bat_balls + 120)
+        bowl_rate = (
+            float(row.weighted_bowl_runs) + 180 * global_bowl_rate
+        ) / (effective_bowl_balls + 180)
+        wicket_rate = (
+            float(row.weighted_bowl_wkts) + 180 * global_wicket_rate
+        ) / (effective_bowl_balls + 180)
+
+        if bowl_balls >= 120 and bat_balls >= 180:
             role = "all-rounder"
-        elif bowl_balls >= max(60, bat_balls * 0.7):
+        elif bowl_balls >= max(60, bat_balls * 0.65):
             role = "bowler"
         else:
             role = "batter"
-        roles[player] = {
+        roles[str(row.player)] = {
             "role": role,
-            "batting_score": float((r.get("bat_runs",0) / max(1, bat_balls)) + 0.15*np.log1p(bat_balls)),
-            "bowling_score": float((r.get("bowl_wkts",0) / max(1, bowl_balls))*25 - (r.get("bowl_runs",0)/max(1,bowl_balls))*0.2 + 0.1*np.log1p(bowl_balls)),
-            "bat_balls": int(bat_balls), "bowl_balls": int(bowl_balls)
+            "batting_score": float(bat_rate - 2.2 * dismissal_rate + 0.025 * np.log1p(bat_balls)),
+            "bowling_score": float(-bowl_rate + 5.0 * wicket_rate + 0.02 * np.log1p(bowl_balls)),
+            "bat_runs_per_ball": float(bat_rate),
+            "dismissal_rate": float(dismissal_rate),
+            "bowl_runs_per_ball": float(bowl_rate),
+            "wicket_rate": float(wicket_rate),
+            "bat_balls": int(bat_balls),
+            "bowl_balls": int(bowl_balls),
+            "effective_bat_balls": round(effective_bat_balls, 2),
+            "effective_bowl_balls": round(effective_bowl_balls, 2),
         }
-    venues = sorted(df["venue"].dropna().astype(str).unique().tolist())
-    return {"players": players, "roles": roles, "venues": venues}
+    return {
+        "players": players,
+        "roles": roles,
+        "venues": sorted(df["venue"].dropna().astype(str).unique()),
+    }
 
 
-def baseline_eval(test, prior):
-    p = np.array([prior[o] for o in OUTCOMES], dtype=float)
-    P = np.repeat((p/p.sum()).reshape(1,-1), len(test), axis=0)
-    pred = np.array(OUTCOMES)[P.argmax(axis=1)]
-    y = test["outcome"].values
-    return {"model":"baseline_prior", "log_loss":float(log_loss(y,P,labels=OUTCOMES)), "accuracy":float(accuracy_score(y,pred)), "balanced_accuracy":float(balanced_accuracy_score(y,pred)), "macro_f1":float(f1_score(y,pred,average="macro",zero_division=0))}
+def chronological_split(df: pd.DataFrame) -> tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame]:
+    matches = (
+        df[["match_id", "date"]]
+        .drop_duplicates("match_id")
+        .sort_values(["date", "match_id"])
+        .reset_index(drop=True)
+    )
+    if len(matches) < 10:
+        raise ValueError("At least 10 matches are required for train/calibration/test splitting.")
+    train_end = max(1, int(len(matches) * 0.70))
+    calibration_end = max(train_end + 1, int(len(matches) * 0.85))
+    train_ids = set(matches.iloc[:train_end]["match_id"])
+    calibration_ids = set(matches.iloc[train_end:calibration_end]["match_id"])
+    test_ids = set(matches.iloc[calibration_end:]["match_id"])
+    return (
+        df[df["match_id"].isin(train_ids)].copy(),
+        df[df["match_id"].isin(calibration_ids)].copy(),
+        df[df["match_id"].isin(test_ids)].copy(),
+    )
 
 
-def main():
-    if not DATA.exists():
-        raise FileNotFoundError("Place IPL.csv next to train_models.py before retraining.")
-    print("Reading IPL.csv...", flush=True)
-    df = prepare(pd.read_csv(DATA, low_memory=False))
-    df = df[df["match_type"].fillna("T20").astype(str).str.contains("T20", na=False)]
-    df = df.sort_values("date")
-    print("Rows:", len(df), "Dates:", df["date"].min(), df["date"].max(), flush=True)
+def recency_weights(frame: pd.DataFrame, reference_date: pd.Timestamp) -> np.ndarray:
+    age_years = (reference_date - frame["date"]).dt.days.clip(lower=0) / 365.25
+    weights = np.power(0.5, age_years / 5.0)
+    return np.clip(weights.to_numpy(dtype=float), 0.15, 1.0)
 
-    # time split: last 20% chronologically as test
-    cutoff = df["date"].quantile(0.8)
-    train = df[df["date"] <= cutoff]
-    test = df[df["date"] > cutoff]
-    # cap for fast reproducible deployment training, but preserve all data for empirical priors/player metadata
-    train_ml = train.sample(min(len(train), 25000), random_state=17) if len(train) > 60000 else train
-    X_train, y_train = train_ml[FEATURES], train_ml["outcome"]
-    test_eval = test.sample(min(len(test), 15000), random_state=17) if len(test) > 35000 else test
-    X_test, y_test = test_eval[FEATURES], test_eval["outcome"]
 
-    priors = empirical_distributions(train)
-    meta = player_metadata(df)
+def align_probabilities(model, frame: pd.DataFrame) -> np.ndarray:
+    probabilities = np.asarray(model.predict_proba(frame[FEATURES]), dtype=float)
+    aligned = np.full((len(frame), len(OUTCOMES)), 1e-12)
+    for source_index, outcome in enumerate(map(str, model.classes_)):
+        if outcome in OUTCOMES:
+            aligned[:, OUTCOMES.index(outcome)] = probabilities[:, source_index]
+    return normalize_array(aligned)
 
-    report = [baseline_eval(test, priors["global"])]
-    models = {}
 
+def tune_calibration(
+    raw: np.ndarray,
+    empirical: np.ndarray,
+    truth: pd.Series,
+) -> dict[str, float]:
+    best = {"model_weight": 1.0, "temperature": 1.0, "log_loss": float("inf")}
+    for model_weight in np.linspace(0.35, 1.0, 14):
+        for temperature in np.linspace(0.70, 1.45, 16):
+            probabilities = calibrated_blend(
+                raw,
+                empirical,
+                model_weight=float(model_weight),
+                temperature=float(temperature),
+            )
+            score = log_loss(truth, probabilities, labels=OUTCOMES)
+            if score < best["log_loss"]:
+                best = {
+                    "model_weight": float(model_weight),
+                    "temperature": float(temperature),
+                    "log_loss": float(score),
+                }
+    return best
+
+
+def metrics(name: str, truth: pd.Series, probabilities: np.ndarray) -> dict:
+    predictions = np.asarray(OUTCOMES)[probabilities.argmax(axis=1)]
+    return {
+        "model": name,
+        "log_loss": float(log_loss(truth, probabilities, labels=OUTCOMES)),
+        "accuracy": float(accuracy_score(truth, predictions)),
+        "balanced_accuracy": float(balanced_accuracy_score(truth, predictions)),
+        "macro_f1": float(f1_score(truth, predictions, average="macro", zero_division=0)),
+    }
+
+
+def train_candidates(seed: int) -> dict[str, Pipeline]:
     candidates = {
-        "random_forest": RandomForestClassifier(n_estimators=70, min_samples_leaf=45, max_features="sqrt", n_jobs=-1, random_state=17, class_weight="balanced_subsample"),
+        "sgd_logistic": Pipeline(
+            [
+                ("pre", make_preprocessor()),
+                (
+                    "classifier",
+                    SGDClassifier(
+                        loss="log_loss",
+                        alpha=2e-5,
+                        max_iter=80,
+                        early_stopping=True,
+                        validation_fraction=0.1,
+                        n_iter_no_change=6,
+                        random_state=seed,
+                    ),
+                ),
+            ]
+        )
     }
-
-    for name, clf in candidates.items():
-        print("Training", name, flush=True)
-        pipe = Pipeline([("pre", make_preprocessor()), ("clf", clf)])
-        try:
-            pipe.fit(X_train, y_train)
-            rep = evaluate(name, pipe, X_test, y_test)
-            report.append(rep)
-            models[name] = pipe
-            joblib.dump(pipe, MODELS / f"{name}.joblib")
-            print(rep, flush=True)
-        except Exception as e:
-            print("Skipped", name, e, flush=True)
-
     if HAS_XGB:
-        print("Training xgboost", flush=True)
-        try:
-            phase_map={"powerplay":0,"middle":1,"death":2}
-            xgb_cols=["innings","over","legal_ball","team_runs","team_wicket","batter_runs","batter_balls"]
-            xgb_idx = X_train.sample(min(len(X_train), 7000), random_state=23).index
-            X_train_xgb = X_train.loc[xgb_idx]
-            y_train_xgb = y_train.loc[xgb_idx]
-            Xtr = X_train_xgb[xgb_cols].apply(pd.to_numeric, errors="coerce").fillna(0).copy()
-            Xtr["phase_code"] = X_train_xgb["phase"].map(phase_map).fillna(1).astype(float)
-            Xte = X_test[xgb_cols].apply(pd.to_numeric, errors="coerce").fillna(0).copy()
-            Xte["phase_code"] = X_test["phase"].map(phase_map).fillna(1).astype(float)
-            y_map = {c:i for i,c in enumerate(OUTCOMES)}
-            xgb = XGBClassifier(n_estimators=15, max_depth=3, learning_rate=0.12, subsample=0.85, colsample_bytree=0.85, objective="multi:softprob", eval_metric="mlogloss", tree_method="hist", random_state=17, n_jobs=1)
-            xgb.fit(Xtr.values, pd.Series(y_train_xgb).map(y_map).values)
-            model = XGBOutcomeWrapper(xgb, OUTCOMES)
-            rep = evaluate("xgboost", model, X_test, y_test)
-            report.append(rep)
-            models["xgboost"] = model
-            joblib.dump(model, MODELS / "xgboost.joblib")
-            print(rep, flush=True)
-        except Exception as e:
-            print("Skipped xgboost", e, flush=True)
+        candidates["xgboost"] = Pipeline(
+            [
+                ("pre", make_preprocessor()),
+                (
+                    "classifier",
+                    EncodedOutcomeClassifier(
+                        XGBClassifier(
+                            n_estimators=320,
+                            max_depth=6,
+                            learning_rate=0.055,
+                            min_child_weight=8,
+                            subsample=0.85,
+                            colsample_bytree=0.80,
+                            reg_alpha=0.08,
+                            reg_lambda=1.2,
+                            objective="multi:softprob",
+                            eval_metric="mlogloss",
+                            tree_method="hist",
+                            random_state=seed,
+                            n_jobs=-1,
+                        ),
+                        OUTCOMES,
+                    ),
+                ),
+            ]
+        )
+    return candidates
 
-    # Save empirical/blend artefacts
-    joblib.dump(priors, MODELS / "baseline_prior.joblib")
-    pd.DataFrame(report).sort_values("log_loss").to_csv(ART / "model_report.csv", index=False)
-    best = pd.DataFrame(report).sort_values("log_loss").iloc[0]["model"]
-    metadata = {
-        "version": "3.0",
-        "features": FEATURES,
-        "numeric_features": NUM_FEATURES,
-        "categorical_features": CAT_FEATURES,
-        "outcomes": OUTCOMES,
-        "best_model_by_log_loss": best,
-        "cutoff_date": str(cutoff.date()),
-        "n_rows": int(len(df)),
-        "train_rows": int(len(train)),
-        "test_rows": int(len(test)),
-        **meta,
-    }
-    with open(ART / "metadata.json", "w") as f:
-        json.dump(metadata, f)
-    print("Best:", best)
+
+def profile_weights(
+    frame: pd.DataFrame,
+    profile: str,
+    reference_date: pd.Timestamp,
+) -> np.ndarray:
+    if profile == "modern":
+        return recency_weights(frame, reference_date)
+    return np.ones(len(frame), dtype=float)
+
+
+def train_profile(
+    profile: str,
+    *,
+    df: pd.DataFrame,
+    train: pd.DataFrame,
+    calibration: pd.DataFrame,
+    test: pd.DataFrame,
+    artifact_dir: Path,
+    data_path: Path,
+    fingerprint: str,
+    seed: int,
+    max_training_rows: int | None,
+) -> None:
+    print(f"\n=== Training {profile} profile ===", flush=True)
+    profile_root = artifact_dir / "profiles"
+    profile_dir = profile_root / profile
+    staging_dir = profile_root / f".{profile}_staging"
+    if staging_dir.exists():
+        shutil.rmtree(staging_dir)
+    staging_models_dir = staging_dir / "models"
+    staging_models_dir.mkdir(parents=True)
+
+    reference_date = df["date"].max()
+    train_weights = profile_weights(train, profile, reference_date)
+    calibration_weights = profile_weights(calibration, profile, reference_date)
+    test_weights = profile_weights(test, profile, reference_date)
+    full_weights = profile_weights(df, profile, reference_date)
+
+    priors = empirical_distributions(train, train_weights)
+    metadata = player_metadata(df, full_weights)
+    empirical_calibration = empirical_matrix(priors, calibration[FEATURES])
+    empirical_test = empirical_matrix(priors, test[FEATURES])
+    report = [metrics("baseline_prior", test["outcome"], empirical_test)]
+    calibrations = {}
+    test_predictions = {}
+    calibration_predictions = {}
+
+    for name, model in train_candidates(seed).items():
+        print(f"Training {profile}/{name}...", flush=True)
+        fit_kwargs = {}
+        if profile == "modern":
+            fit_kwargs["classifier__sample_weight"] = train_weights
+        model.fit(train[FEATURES], train["outcome"], **fit_kwargs)
+        raw_calibration = align_probabilities(model, calibration)
+        calibration_config = tune_calibration(
+            raw_calibration,
+            empirical_calibration,
+            calibration["outcome"],
+        )
+        raw_test = align_probabilities(model, test)
+        calibrated_test = calibrated_blend(
+            raw_test,
+            empirical_test,
+            model_weight=calibration_config["model_weight"],
+            temperature=calibration_config["temperature"],
+        )
+        report.append(metrics(name, test["outcome"], calibrated_test))
+        calibrations[name] = calibration_config
+        test_predictions[name] = raw_test
+        calibration_predictions[name] = raw_calibration
+        print(report[-1], calibration_config, flush=True)
+
+    if test_predictions:
+        ensemble_names = sorted(
+            calibrations,
+            key=lambda name: calibrations[name]["log_loss"],
+        )[: min(2, len(calibrations))]
+        inverse_losses = np.array([1.0 / calibrations[name]["log_loss"] for name in ensemble_names])
+        ensemble_weights = inverse_losses / inverse_losses.sum()
+        raw_ensemble_calibration = sum(
+            weight * calibration_predictions[name]
+            for weight, name in zip(ensemble_weights, ensemble_names, strict=True)
+        )
+        raw_ensemble_test = sum(
+            weight * test_predictions[name]
+            for weight, name in zip(ensemble_weights, ensemble_names, strict=True)
+        )
+        ensemble_calibration = tune_calibration(
+            raw_ensemble_calibration,
+            empirical_calibration,
+            calibration["outcome"],
+        )
+        ensemble_test = calibrated_blend(
+            raw_ensemble_test,
+            empirical_test,
+            model_weight=ensemble_calibration["model_weight"],
+            temperature=ensemble_calibration["temperature"],
+        )
+        report.append(metrics("calibrated_blend", test["outcome"], ensemble_test))
+        calibrations["calibrated_blend"] = {
+            **ensemble_calibration,
+            "members": ensemble_names,
+            "member_weights": [float(value) for value in ensemble_weights],
+        }
+
+    production_frame = df
+    production_weights = full_weights
+    if max_training_rows and len(production_frame) > max_training_rows:
+        production_frame = production_frame.sample(max_training_rows, random_state=seed).sort_index()
+        production_weights = profile_weights(production_frame, profile, reference_date)
+    for name, model in train_candidates(seed).items():
+        print(
+            f"Refitting deployment {profile}/{name} on {len(production_frame):,} rows...",
+            flush=True,
+        )
+        fit_kwargs = {}
+        if profile == "modern":
+            fit_kwargs["classifier__sample_weight"] = production_weights
+        model.fit(production_frame[FEATURES], production_frame["outcome"], **fit_kwargs)
+        classifier = model.named_steps["classifier"]
+        if hasattr(classifier, "estimator") and hasattr(classifier.estimator, "set_params"):
+            classifier.estimator.set_params(n_jobs=1)
+        joblib.dump(
+            FastPipelineOutcomeModel(model, NUM_FEATURES, CAT_FEATURES),
+            staging_models_dir / f"{name}.joblib",
+            compress=3,
+        )
+
+    production_priors = empirical_distributions(df, full_weights)
+    joblib.dump(production_priors, staging_models_dir / "baseline_prior.joblib", compress=3)
+    report_frame = pd.DataFrame(report).sort_values("log_loss")
+    report_frame.to_csv(staging_dir / "model_report.csv", index=False)
+
+    metadata.update(
+        {
+            "version": "5.0",
+            "artifact_schema": 5,
+            "profile": profile,
+            "profile_description": (
+                "Recency-weighted modern IPL form with a five-year half-life."
+                if profile == "modern"
+                else "Equal-weight lifetime IPL history for legends and cross-era simulations."
+            ),
+            "features": FEATURES,
+            "numeric_features": NUM_FEATURES,
+            "categorical_features": CAT_FEATURES,
+            "outcomes": OUTCOMES,
+            "best_model_by_log_loss": str(report_frame.iloc[0]["model"]),
+            "model_calibration": calibrations,
+            "data_fingerprint": fingerprint,
+            "data_source": (
+                "maratheabhishek/ipl-dataset-2008-to-2025"
+                if data_path.is_dir()
+                else data_path.name
+            ),
+            "data_start_date": str(df["date"].min().date()),
+            "data_end_date": str(df["date"].max().date()),
+            "n_rows": int(len(df)),
+            "n_matches": int(df["match_id"].nunique()),
+            "train_rows": int(len(train)),
+            "calibration_rows": int(len(calibration)),
+            "test_rows": int(len(test)),
+            "leakage_safe_pre_delivery_features": True,
+            "recency_weight_half_life_years": 5.0 if profile == "modern" else None,
+            "equal_weight_lifetime_data": profile == "lifetime",
+        }
+    )
+    (staging_dir / "metadata.json").write_text(json.dumps(metadata, indent=2), encoding="utf-8")
+
+    backup_dir = profile_root / f".{profile}_backup"
+    if backup_dir.exists():
+        shutil.rmtree(backup_dir)
+    if profile_dir.exists():
+        profile_dir.rename(backup_dir)
+    staging_dir.rename(profile_dir)
+    if backup_dir.exists():
+        shutil.rmtree(backup_dir)
+
+    if profile == "modern":
+        top_models = artifact_dir / "models"
+        top_models_staging = artifact_dir / "models_staging"
+        if top_models_staging.exists():
+            shutil.rmtree(top_models_staging)
+        shutil.copytree(profile_dir / "models", top_models_staging)
+        top_models_backup = artifact_dir / "models_backup"
+        if top_models_backup.exists():
+            shutil.rmtree(top_models_backup)
+        if top_models.exists():
+            top_models.rename(top_models_backup)
+        top_models_staging.rename(top_models)
+        if top_models_backup.exists():
+            shutil.rmtree(top_models_backup)
+        shutil.copy2(profile_dir / "metadata.json", artifact_dir / "metadata.json")
+        shutil.copy2(profile_dir / "model_report.csv", artifact_dir / "model_report.csv")
+
+    print(
+        f"Best {profile} test model: {metadata['best_model_by_log_loss']}",
+        flush=True,
+    )
+
+
+def main() -> None:
+    args = parse_args()
+    data_path = resolve_data_path(args.data)
+    artifact_dir = args.artifacts.resolve()
+    cache_dir = artifact_dir / "cache"
+    artifact_dir.mkdir(parents=True, exist_ok=True)
+
+    df, fingerprint = load_prepared(data_path, cache_dir, not args.no_cache)
+    df = df.sort_values(["date", "match_id", "innings", "over", "ball", "_row_order"])
+    train, calibration, test = chronological_split(df)
+    if args.max_training_rows and len(train) > args.max_training_rows:
+        train = train.sample(args.max_training_rows, random_state=args.seed).sort_index()
+
+    print(
+        f"Prepared {len(df):,} deliveries across {df['match_id'].nunique():,} matches "
+        f"({df['date'].min().date()} to {df['date'].max().date()}).",
+        flush=True,
+    )
+    print(
+        f"Split rows: train={len(train):,}, calibration={len(calibration):,}, test={len(test):,}",
+        flush=True,
+    )
+
+    for profile in args.profiles:
+        train_profile(
+            profile,
+            df=df,
+            train=train,
+            calibration=calibration,
+            test=test,
+            artifact_dir=artifact_dir,
+            data_path=data_path,
+            fingerprint=fingerprint,
+            seed=args.seed,
+            max_training_rows=args.max_training_rows,
+        )
+
 
 if __name__ == "__main__":
     main()

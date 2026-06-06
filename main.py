@@ -13,6 +13,7 @@ PROBES_DIR = ROOT / "artifacts" / "probes"
 ARTIFACTS_DIR = ROOT / "artifacts"
 
 DATA_CANDIDATES = [
+    ROOT / "Data" / "ipl_dataset",
     ROOT / "data" / "IPL.csv",
     ROOT / "IPL.csv",
 ]
@@ -61,28 +62,47 @@ def build_ipl_probe() -> dict[str, Any]:
     metadata_path = first_existing(METADATA_CANDIDATES)
 
     if data_path is not None:
-        sample = pd.read_csv(data_path, nrows=5000)
+        if data_path.is_dir():
+            delivery_path = data_path / "ball_by_ball_data.csv"
+            match_path = data_path / "ipl_matches_data.csv"
+            sample = pd.read_csv(delivery_path, nrows=5000)
+            matches = pd.read_csv(match_path, usecols=["match_id", "match_date"])
+            date_values = pd.to_datetime(matches["match_date"], errors="coerce")
+            source_file_checked = str(data_path.relative_to(ROOT))
+        else:
+            delivery_path = data_path
+            sample = pd.read_csv(delivery_path, nrows=5000)
+            date_values = pd.to_datetime(sample.get("date"), errors="coerce")
+            source_file_checked = (
+                str(data_path.relative_to(ROOT))
+                if data_path.is_relative_to(ROOT)
+                else str(data_path)
+            )
         full_rows = None
         try:
-            with data_path.open("r", encoding="utf-8", errors="ignore") as f:
+            with delivery_path.open("r", encoding="utf-8", errors="ignore") as f:
                 full_rows = max(sum(1 for _ in f) - 1, 0)
         except Exception:
             pass
 
         probe = {
             "source_name": "IPL ball-by-ball dataset",
-            "source_file_checked": str(data_path.relative_to(ROOT)) if data_path.is_relative_to(ROOT) else str(data_path),
+            "source_file_checked": source_file_checked,
             "status": "ok",
             "rows_observed_in_probe": int(len(sample)),
             "total_rows_if_counted": full_rows,
+            "date_min": str(date_values.min().date()) if date_values.notna().any() else None,
+            "date_max": str(date_values.max().date()) if date_values.notna().any() else None,
             "columns": list(sample.columns),
             "required_columns_present": {
-                col: col in sample.columns
-                for col in [
-                    "match_id", "season", "innings", "batting_team", "bowling_team",
-                    "over", "ball", "batter", "bowler", "runs_total", "runs_batter",
-                    "runs_extras", "extra_type", "wicket_kind", "venue"
-                ]
+                "match_id": "match_id" in sample,
+                "innings": "innings" in sample,
+                "batter": "batter" in sample,
+                "bowler": "bowler" in sample,
+                "runs_total": "runs_total" in sample or "total_runs" in sample,
+                "runs_batter": "runs_batter" in sample or "batter_runs" in sample,
+                "over": "over" in sample or "over_number" in sample,
+                "ball": "ball" in sample or "ball_number" in sample,
             },
             "example_row": sample.head(1).fillna("").to_dict(orient="records"),
         }
@@ -133,7 +153,7 @@ def build_primary_metric(report: pd.DataFrame, baseline_value: float) -> dict[st
         "passed": bool(value < baseline_value),
         "unit": "multiclass log loss; lower is better",
         "model": str(best["model"]),
-        "notes": "Final primary metric. XGBoost trained on IPL ball-by-ball data, 2008-2025. Beats empirical baseline.",
+        "notes": "Final primary metric. Leakage-safe XGBoost trained on chronological IPL ball-by-ball data through the latest committed artifact coverage. Beats empirical baseline.",
         "is_template": False,
     }
 

@@ -1,0 +1,35 @@
+{
+  "profiles": {
+    "modern": {
+      "weighting": "five-year recency half-life",
+      "best_model": "xgboost",
+      "test_log_loss": 1.8292894450677848,
+      "mirror_xi_chase_win_rate": 0.51
+    },
+    "lifetime": {
+      "weighting": "equal weight for every delivery",
+      "best_model": "xgboost",
+      "test_log_loss": 1.8272248265861515,
+      "mirror_xi_chase_win_rate": 0.49
+    }
+  },
+  "legends_state_probe": {
+    "batter": "SR Tendulkar",
+    "bowler": "SP Narine",
+    "venue": "Eden Gardens",
+    "modern": {
+      "dot_probability": 0.2532,
+      "wicket_probability": 0.0591,
+      "boundary_probability": 0.1297,
+      "batter_effective_balls": 295.59,
+      "bowler_effective_balls": 1924.75
+    },
+    "lifetime": {
+      "dot_probability": 0.2654,
+      "wicket_probability": 0.053,
+      "boundary_probability": 0.1205,
+      "batter_effective_balls": 1948.0,
+      "bowler_effective_balls": 4507.0
+    }
+  }
+}

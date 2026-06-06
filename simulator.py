@@ -1,91 +1,218 @@
 from __future__ import annotations
-import json, math, random
-from dataclasses import dataclass, field
+import json
 from pathlib import Path
 from typing import Dict, List, Tuple, Optional
 import numpy as np
 import pandas as pd
 import joblib
 
-OUTCOMES = ["0", "1", "2", "3", "4", "6", "W", "WD", "NB", "LB", "B"]
+from data_pipeline import FEATURES, OUTCOMES, canonicalize_team, canonicalize_venue, phase_from_over
+from probability import calibrated_blend, empirical_array, normalize_array, normalize_dict
+
 LEGAL_OUTCOMES = {"0","1","2","3","4","6","W","LB","B"}
 EXTRA_OUTCOMES = {"WD","NB"}
 
 ART = Path(__file__).resolve().parent / "artifacts"
-MODELS = ART / "models"
 
 
-def phase_from_over(over: int) -> str:
-    if over < 6: return "powerplay"
-    if over < 16: return "middle"
-    return "death"
+def available_profiles() -> list[str]:
+    profile_root = ART / "profiles"
+    if profile_root.exists():
+        profiles = sorted(
+            (
+                path.name
+                for path in profile_root.iterdir()
+                if path.is_dir() and (path / "metadata.json").exists()
+            ),
+            key=lambda name: (name != "modern", name),
+        )
+        if profiles:
+            return profiles
+    return ["modern"]
 
 
-def load_artifacts():
-    with open(ART / "metadata.json") as f: meta = json.load(f)
-    report = pd.read_csv(ART / "model_report.csv") if (ART/"model_report.csv").exists() else pd.DataFrame()
+def load_artifacts(profile: str = "modern"):
+    profile_dir = ART / "profiles" / profile
+    if profile_dir.exists():
+        metadata_path = profile_dir / "metadata.json"
+        report_path = profile_dir / "model_report.csv"
+        models_dir = profile_dir / "models"
+    elif profile == "modern":
+        metadata_path = ART / "metadata.json"
+        report_path = ART / "model_report.csv"
+        models_dir = ART / "models"
+    else:
+        raise ValueError(
+            f"Unknown artifact profile {profile!r}. Available profiles: {available_profiles()}"
+        )
+
+    with open(metadata_path, encoding="utf-8") as f:
+        meta = json.load(f)
+    report = pd.read_csv(report_path) if report_path.exists() else pd.DataFrame()
     models = {}
-    for p in MODELS.glob("*.joblib"):
-        try: models[p.stem] = joblib.load(p)
-        except Exception: pass
+    load_errors = {}
+    for p in models_dir.glob("*.joblib"):
+        try:
+            models[p.stem] = joblib.load(p)
+        except Exception as exc:
+            load_errors[p.stem] = str(exc)
+    warnings = []
+    if int(meta.get("artifact_schema", 0)) < 4:
+        warnings.append(
+            "Legacy v3 artifacts detected. Retrain with train_models.py to use "
+            "leakage-safe state, chase context, and learned calibration."
+        )
+    if load_errors:
+        warnings.append(f"Could not load model artifacts: {sorted(load_errors)}")
+    meta.setdefault("profile", profile)
+    meta["_available_profiles"] = available_profiles()
+    meta["_artifact_warnings"] = warnings
     return meta, report, models
 
 
 def vector_input(state: dict, batter: str, bowler: str, batting_team: str, bowling_team: str, venue: str, toss_decision: str) -> pd.DataFrame:
-    return pd.DataFrame([{
-        "innings": state.get("innings",1), "over": state.get("over",0), "legal_ball": max(1, state.get("legal_ball",1)),
-        "team_runs": state.get("runs",0), "team_wicket": state.get("wickets",0),
-        "batter_runs": state.get("bat_runs",{}).get(batter,0), "batter_balls": state.get("bat_balls",{}).get(batter,0),
-        "phase": phase_from_over(state.get("over",0)), "batting_team": batting_team, "bowling_team": bowling_team,
-        "batter": batter, "bowler": bowler, "venue": venue, "toss_decision": toss_decision
-    }])
+    balls_bowled = int(state.get("balls_bowled", 0))
+    balls_remaining = max(0, 120 - balls_bowled)
+    runs = int(state.get("runs", 0))
+    wickets = int(state.get("wickets", 0))
+    batter_runs = int(state.get("bat_runs", {}).get(batter, 0))
+    batter_balls = int(state.get("bat_balls", {}).get(batter, 0))
+    target = int(state.get("target") or 0)
+    innings = int(state.get("innings", 1))
+    runs_required = max(0, target - runs) if innings == 2 else 0
+    current_run_rate = 6.0 * runs / balls_bowled if balls_bowled else 0.0
+    required_run_rate = (
+        6.0 * runs_required / balls_remaining
+        if innings == 2 and balls_remaining
+        else 0.0
+    )
+    row = {
+        "innings": innings,
+        "over": int(state.get("over", 0)),
+        "legal_ball": max(1, int(state.get("legal_ball", 1))),
+        "balls_bowled": balls_bowled,
+        "balls_remaining": balls_remaining,
+        "team_runs": runs,
+        "team_wicket": wickets,
+        "wickets_remaining": max(0, 10 - wickets),
+        "current_run_rate": current_run_rate,
+        "batter_runs": batter_runs,
+        "batter_balls": batter_balls,
+        "batter_strike_rate": 100.0 * batter_runs / batter_balls if batter_balls else 0.0,
+        "target": target,
+        "runs_required": runs_required,
+        "required_run_rate": required_run_rate,
+        "rate_pressure": required_run_rate - current_run_rate if innings == 2 else 0.0,
+        "phase": phase_from_over(int(state.get("over", 0))),
+        "batting_team": canonicalize_team(batting_team),
+        "bowling_team": canonicalize_team(bowling_team),
+        "batter": batter,
+        "bowler": bowler,
+        "venue": canonicalize_venue(venue),
+        "toss_decision": toss_decision,
+    }
+    return pd.DataFrame([row], columns=FEATURES)
 
 
 def normalise(d: Dict[str,float]) -> Dict[str,float]:
-    arr = np.array([max(0.0, float(d.get(o,0))) for o in OUTCOMES], dtype=float) + 1e-9
-    arr = arr / arr.sum()
-    return {o: float(arr[i]) for i,o in enumerate(OUTCOMES)}
+    return normalize_dict(d)
 
 
-def get_empirical(priors: dict, batter: str, bowler: str, phase: str) -> Dict[str,float]:
-    g = priors.get("global", {})
-    ph = priors.get("phase", {}).get(phase, g)
-    bp = priors.get("batter_phase", {}).get(f"{batter}||{phase}", ph)
-    wp = priors.get("bowler_phase", {}).get(f"{bowler}||{phase}", ph)
-    blended = {}
-    for o in OUTCOMES:
-        blended[o] = 0.45*float(ph.get(o,0)) + 0.30*float(bp.get(o,0)) + 0.25*float(wp.get(o,0))
-    return normalise(blended)
+def get_empirical(
+    priors: dict,
+    batter: str,
+    bowler: str,
+    phase: str,
+    innings: int = 1,
+    venue: str = "Unknown",
+    batting_team: str = "Unknown",
+    bowling_team: str = "Unknown",
+) -> Dict[str,float]:
+    values = empirical_array(
+        priors,
+        batter=batter,
+        bowler=bowler,
+        phase=phase,
+        innings=innings,
+        venue=venue,
+        batting_team=batting_team,
+        bowling_team=bowling_team,
+    )
+    return {outcome: float(values[index]) for index, outcome in enumerate(OUTCOMES)}
 
 
-def model_probs(model_name: str, models: dict, priors: dict, x: pd.DataFrame, batter: str, bowler: str, phase: str, temperature: float=0.85) -> Dict[str,float]:
-    emp = get_empirical(priors, batter, bowler, phase)
-    if model_name == "baseline_prior" or model_name not in models or model_name == "calibrated_blend":
-        ml = emp
+def _aligned_model_probabilities(model, x: pd.DataFrame) -> np.ndarray:
+    raw = np.asarray(model.predict_proba(x), dtype=float)[0]
+    classes = [str(value) for value in getattr(model, "classes_", OUTCOMES)]
+    aligned = np.full(len(OUTCOMES), 1e-12)
+    for index, outcome in enumerate(classes):
+        if outcome in OUTCOMES:
+            aligned[OUTCOMES.index(outcome)] = raw[index]
+    return normalize_array(aligned)
+
+
+def model_probs(
+    model_name: str,
+    models: dict,
+    priors: dict,
+    x: pd.DataFrame,
+    batter: str,
+    bowler: str,
+    phase: str,
+    meta: Optional[dict] = None,
+) -> Dict[str,float]:
+    meta = meta or {}
+    row = x.iloc[0]
+    empirical = empirical_array(
+        priors,
+        batter=batter,
+        bowler=bowler,
+        phase=phase,
+        innings=int(row.get("innings", 1)),
+        venue=str(row.get("venue", "Unknown")),
+        batting_team=str(row.get("batting_team", "Unknown")),
+        bowling_team=str(row.get("bowling_team", "Unknown")),
+    )
+    if model_name == "baseline_prior":
+        result = empirical
     else:
-        try:
-            m = models[model_name]
-            proba = m.predict_proba(x)[0]
-            cls = list(getattr(m, "classes_", OUTCOMES))
-            ml = {o: 1e-9 for o in OUTCOMES}
-            for c,p in zip(cls, proba):
-                c = str(c)
-                if c in ml: ml[c] = float(p)
-            ml = normalise(ml)
-        except Exception:
-            ml = emp
-    # calibrated blend: ML receives weight, empirical priors keep cricket realism
-    w_ml = 0.0 if model_name == "baseline_prior" else 0.45
-    raw = {o: w_ml*ml[o] + (1-w_ml)*emp[o] for o in OUTCOMES}
-    # Practical calibration caps to avoid silly collapses/extras
-    raw["W"] = min(raw["W"], 0.075)
-    raw["WD"] = min(raw["WD"], 0.060)
-    raw["NB"] = min(raw["NB"], 0.018)
-    # smooth via temperature, <1 keeps confident but not extreme after clipping
-    arr = np.array([raw[o] for o in OUTCOMES], dtype=float)
-    arr = np.power(arr + 1e-12, temperature)
-    arr /= arr.sum()
-    return {o: float(arr[i]) for i,o in enumerate(OUTCOMES)}
+        calibration = meta.get("model_calibration", {}).get(model_name, {})
+        if model_name == "calibrated_blend":
+            members = calibration.get("members", [])
+            weights = calibration.get("member_weights", [])
+            available = [(name, float(weight)) for name, weight in zip(members, weights) if name in models]
+            if not available:
+                preferred = [name for name in ("xgboost", "sgd_logistic", "random_forest") if name in models]
+                available = [(name, 1.0 / len(preferred)) for name in preferred] if preferred else []
+            if available:
+                total_weight = sum(weight for _, weight in available)
+                model_probability = sum(
+                    (weight / total_weight) * _aligned_model_probabilities(models[name], x)
+                    for name, weight in available
+                )
+            else:
+                model_probability = empirical
+        elif model_name in models:
+            model_x = x
+            if int(meta.get("artifact_schema", 0)) < 4 and int(row.get("innings", 1)) == 2:
+                # V3 learned from leaked post-ball state and an unconditioned innings flag.
+                # Neutralising innings prevents the historical chase artifact until retraining.
+                model_x = x.copy()
+                model_x["innings"] = 1
+            model_probability = _aligned_model_probabilities(models[model_name], model_x)
+        else:
+            model_probability = empirical
+
+        legacy_weights = {"xgboost": 0.75, "random_forest": 0.60, "sgd_logistic": 0.70}
+        model_weight = float(calibration.get("model_weight", legacy_weights.get(model_name, 0.70)))
+        temperature = float(calibration.get("temperature", 1.0))
+        result = calibrated_blend(
+            model_probability.reshape(1, -1),
+            empirical.reshape(1, -1),
+            model_weight=model_weight,
+            temperature=temperature,
+        )[0]
+    return {outcome: float(result[index]) for index, outcome in enumerate(OUTCOMES)}
 
 
 def choose_next_batter(available: List[str], used: List[str], meta: dict, phase: str, wickets: int) -> Optional[str]:
@@ -125,6 +252,17 @@ def rotate_strike(striker, non_striker):
     return non_striker, striker
 
 
+def _sample_extra_runs(priors: dict, outcome: str, rng: np.random.Generator) -> int:
+    values = priors.get("extra_runs", {}).get(outcome, [1])
+    if isinstance(values, dict):
+        runs = np.array([int(value) for value in values], dtype=int)
+        probabilities = normalize_array([values[str(value)] for value in runs])
+        return int(rng.choice(runs, p=probabilities))
+    if not values:
+        return 1
+    return int(rng.choice(values))
+
+
 def outcome_to_runs(out: str, priors: dict, rng: np.random.Generator, free_hit: bool=False) -> Tuple[int,int,bool,str,bool]:
     """returns runs_total, batter_runs, wicket, extra_type, legal_ball"""
     if out == "W" and free_hit:
@@ -133,21 +271,56 @@ def outcome_to_runs(out: str, priors: dict, rng: np.random.Generator, free_hit: 
         br = int(out); return br, br, False, "", True
     if out == "W": return 0, 0, True, "", True
     if out in ["WD","NB"]:
-        vals = priors.get("extra_runs",{}).get(out,[1])
-        extra = int(rng.choice(vals)) if vals else 1
+        extra = _sample_extra_runs(priors, out, rng)
         extra = max(1, min(extra, 7))
         return extra, max(0, extra-1 if out == "NB" else 0), False, "wides" if out=="WD" else "noballs", False
     if out in ["LB","B"]:
-        vals = priors.get("extra_runs",{}).get(out,[1])
-        extra = int(rng.choice(vals)) if vals else 1
+        extra = _sample_extra_runs(priors, out, rng)
         extra = max(1, min(extra, 4))
         return extra, 0, False, "legbyes" if out=="LB" else "byes", True
     return 0,0,False,"",True
 
 
+def apply_match_context(
+    probabilities: Dict[str, float],
+    *,
+    innings: int,
+    runs: int,
+    balls_bowled: int,
+    target: Optional[int],
+    learned_chase_context: bool = True,
+) -> Dict[str, float]:
+    adjusted = dict(probabilities)
+    # V4+ models learn chase pressure directly. This fallback exists only for
+    # legacy artifacts that lack target and required-rate features.
+    if innings == 2 and target and not learned_chase_context:
+        balls_remaining = max(1, 120 - balls_bowled)
+        runs_required = max(0, target - runs)
+        required_rate = 6.0 * runs_required / balls_remaining
+        expected_runs = sum(
+            adjusted[outcome] * int(outcome)
+            for outcome in ["1", "2", "3", "4", "6"]
+        )
+        expected_rate = 6.0 * expected_runs
+        pressure = required_rate - expected_rate
+        if pressure > 0:
+            aggression = min(1.35, 1.0 + 0.035 * pressure)
+            adjusted["4"] *= aggression
+            adjusted["6"] *= aggression
+            adjusted["2"] *= min(1.15, 1.0 + 0.012 * pressure)
+            adjusted["W"] *= min(1.25, 1.0 + 0.022 * pressure)
+            adjusted["0"] *= max(0.78, 1.0 - 0.018 * pressure)
+        elif pressure < -1.5:
+            control = min(0.16, 0.025 * abs(pressure))
+            adjusted["W"] *= 1.0 - control
+            adjusted["6"] *= 1.0 - control / 2
+            adjusted["1"] *= 1.0 + control / 2
+    return normalise(adjusted)
+
+
 def simulate_innings(team_name: str, opponent: str, batting_xi: List[str], bowling_xi: List[str], models:dict, meta:dict, model_name:str,
                      venue="Unknown", pitch="balanced", weather="clear", toss_decision="bat", innings=1, target:Optional[int]=None,
-                     seed:Optional[int]=None, commentary=False) -> dict:
+                     seed:Optional[int]=None, commentary=False, probability_cache: Optional[dict] = None) -> dict:
     rng = np.random.default_rng(seed)
     priors = models.get("baseline_prior", {})
     batters = batting_xi[:]
@@ -161,7 +334,17 @@ def simulate_innings(team_name: str, opponent: str, batting_xi: List[str], bowli
     bat = {p:{"R":0,"B":0,"4s":0,"6s":0,"out":"not out"} for p in batters}
     bowl = {p:{"O_balls":0,"R":0,"W":0,"WD":0,"NB":0} for p in bowlers}
     rows=[]; fow=[]; over_summary=[]
-    state = {"innings":innings,"over":0,"legal_ball":1,"runs":0,"wickets":0,"bat_runs":{},"bat_balls":{}}
+    state = {
+        "innings": innings,
+        "over": 0,
+        "legal_ball": 1,
+        "balls_bowled": 0,
+        "runs": 0,
+        "wickets": 0,
+        "target": target or 0,
+        "bat_runs": {},
+        "bat_balls": {},
+    }
     over = 0; prev_bowler=None; current_bowler=None; legal_in_over=0; free_hit=False
     over_runs=0; over_wkts=0; extra_seq=0
 
@@ -172,16 +355,45 @@ def simulate_innings(team_name: str, opponent: str, batting_xi: List[str], bowli
             over_runs=0; over_wkts=0; extra_seq=0
         phase = phase_from_over(over)
         state.update({"over":over,"legal_ball":legal_in_over+1})
-        x = vector_input(state, striker, current_bowler, team_name, opponent, venue, toss_decision)
-        p = model_probs(model_name, models, priors, x, striker, current_bowler, phase)
-        # conditions nudge, modest and transparent
-        if pitch == "bowling-friendly": p["W"] = min(0.09, p["W"]*1.12)
-        if pitch == "batting-friendly":
-            p["4"] *= 1.08; p["6"] *= 1.08; p["W"] *= 0.90
-        if weather in ["humid/dewy", "rain-threat"]: p["WD"] *= 1.08; p["NB"] *= 1.05
-        p = normalise(p)
+        delivery_batter = striker
+        x = vector_input(state, delivery_batter, current_bowler, team_name, opponent, venue, toss_decision)
+        cache_key = None
+        if probability_cache is not None:
+            row = x.iloc[0]
+            cache_key = (
+                model_name,
+                innings,
+                over,
+                int(row["legal_ball"]),
+                int(row["team_runs"]) // 5,
+                int(row["team_wicket"]),
+                int(row["batter_runs"]) // 5,
+                int(row["batter_balls"]) // 3,
+                round(float(row["required_run_rate"]) * 2) / 2,
+                delivery_batter,
+                current_bowler,
+                str(row["venue"]),
+                str(row["batting_team"]),
+                str(row["bowling_team"]),
+            )
+        if cache_key is not None and cache_key in probability_cache:
+            p = probability_cache[cache_key]
+        else:
+            p = model_probs(model_name, models, priors, x, delivery_batter, current_bowler, phase, meta)
+            if cache_key is not None:
+                probability_cache[cache_key] = p
+        p = apply_match_context(
+            p,
+            innings=innings,
+            runs=state["runs"],
+            balls_bowled=state["balls_bowled"],
+            target=target,
+            learned_chase_context=int(meta.get("artifact_schema", 0)) >= 4,
+        )
         out = rng.choice(OUTCOMES, p=[p[o] for o in OUTCOMES])
-        runs, bruns, wicket, extra_type, legal = outcome_to_runs(out, priors, rng, free_hit=free_hit)
+        if out == "W" and free_hit:
+            out = "1" if rng.random() < 0.45 else "0"
+        runs, bruns, wicket, extra_type, legal = outcome_to_runs(out, priors, rng)
         if free_hit and legal: free_hit=False
         if out == "NB": free_hit=True
 
@@ -191,23 +403,24 @@ def simulate_innings(team_name: str, opponent: str, batting_xi: List[str], bowli
             if out == "WD": bowl[current_bowler]["WD"] += 1
             if out == "NB": bowl[current_bowler]["NB"] += 1
         if bruns:
-            bat[striker]["R"] += bruns
-            if bruns == 4: bat[striker]["4s"] += 1
-            if bruns == 6: bat[striker]["6s"] += 1
+            bat[delivery_batter]["R"] += bruns
+            if bruns == 4: bat[delivery_batter]["4s"] += 1
+            if bruns == 6: bat[delivery_batter]["6s"] += 1
         if legal:
-            bat[striker]["B"] += 1
+            bat[delivery_batter]["B"] += 1
             bowl[current_bowler]["O_balls"] += 1
-            state["bat_balls"][striker] = bat[striker]["B"]
+            state["balls_bowled"] += 1
+            state["bat_balls"][delivery_batter] = bat[delivery_batter]["B"]
             legal_in_over += 1
-        state["bat_runs"][striker] = bat[striker]["R"]
+        state["bat_runs"][delivery_batter] = bat[delivery_batter]["R"]
 
         dismissed = ""
         if wicket:
             state["wickets"] += 1; over_wkts += 1
             bowl[current_bowler]["W"] += 1
-            dismissed = striker
-            bat[striker]["out"] = f"c/b {current_bowler}" if rng.random()<0.55 else f"b {current_bowler}"
-            fow.append({"wicket":state["wickets"], "score":state["runs"], "over":f"{over}.{legal_in_over}", "player":striker})
+            dismissed = delivery_batter
+            bat[delivery_batter]["out"] = f"c/b {current_bowler}" if rng.random()<0.55 else f"b {current_bowler}"
+            fow.append({"wicket":state["wickets"], "score":state["runs"], "over":f"{over}.{legal_in_over}", "player":delivery_batter})
             nb = choose_next_batter(batters, used_batters, meta, phase, state["wickets"])
             if nb is None or state["wickets"] >= 10:
                 pass
@@ -223,16 +436,18 @@ def simulate_innings(team_name: str, opponent: str, batting_xi: List[str], bowli
         comm = ""
         if commentary:
             if out == "W": comm = f"{current_bowler} strikes, {dismissed} is gone at a crucial stage."
-            elif out == "6": comm = f"{striker} launches it for six."
-            elif out == "4": comm = f"{striker} finds the boundary."
+            elif out == "6": comm = f"{delivery_batter} launches it for six."
+            elif out == "4": comm = f"{delivery_batter} finds the boundary."
             elif out in ["WD","NB"]: comm = f"Extra conceded by {current_bowler}; the legal ball count stays unchanged."
-            else: comm = f"{current_bowler} to {striker}, {runs} run{'s' if runs!=1 else ''}."
-        rows.append({"ball":label,"over":over,"legal_ball_in_over":legal_in_over,"phase":phase,"bowler":current_bowler,"batter":striker,
+            else: comm = f"{current_bowler} to {delivery_batter}, {runs} run{'s' if runs!=1 else ''}."
+        rows.append({"ball":label,"over":over,"legal_ball_in_over":legal_in_over,"phase":phase,"bowler":current_bowler,"batter":delivery_batter,
                      "outcome":out,"runs":runs,"batter_runs":bruns,"extras":max(0,runs-bruns),"extra_type":extra_type,"wicket":wicket,
                      "score":state["runs"],"wickets":state["wickets"],"p_wicket":round(p["W"],4),"p_boundary":round(p["4"]+p["6"],4),
                      "p_extra":round(p["WD"]+p["NB"]+p["LB"]+p["B"],4),"bowler_reason": reason if legal_in_over<=1 else "", "commentary":comm})
 
-        if legal and bruns % 2 == 1: striker, non_striker = rotate_strike(striker, non_striker)
+        strike_runs = max(0, runs - 1) if out == "WD" else (bruns if out == "NB" else runs)
+        if strike_runs % 2 == 1:
+            striker, non_striker = rotate_strike(striker, non_striker)
         if legal_in_over == 6:
             over_summary.append({"over":over+1,"bowler":current_bowler,"runs":over_runs,"wickets":over_wkts,"score":f"{state['runs']}/{state['wickets']}"})
             striker, non_striker = rotate_strike(striker, non_striker)
@@ -259,18 +474,18 @@ def simulate_innings(team_name: str, opponent: str, batting_xi: List[str], bowli
             "ball_by_ball":pd.DataFrame(rows),"over_summary":pd.DataFrame(over_summary),"rules":rules}
 
 
-def simulate_match(team1, team2, xi1, xi2, models, meta, model_name, venue, pitch, weather, toss_winner, toss_decision, seed=None, commentary=False):
+def simulate_match(team1, team2, xi1, xi2, models, meta, model_name, venue, pitch, weather, toss_winner, toss_decision, seed=None, commentary=False, probability_cache=None):
     # toss decides batting order
     if toss_decision == "bat":
         bat_first = toss_winner
     else:
         bat_first = team2 if toss_winner == team1 else team1
     if bat_first == team1:
-        first = simulate_innings(team1, team2, xi1, xi2, models, meta, model_name, venue,pitch,weather,toss_decision,1,None,seed,commentary)
-        second = simulate_innings(team2, team1, xi2, xi1, models, meta, model_name, venue,pitch,weather,toss_decision,2,first["runs"]+1,None if seed is None else seed+1,commentary)
+        first = simulate_innings(team1, team2, xi1, xi2, models, meta, model_name, venue,pitch,weather,toss_decision,1,None,seed,commentary,probability_cache)
+        second = simulate_innings(team2, team1, xi2, xi1, models, meta, model_name, venue,pitch,weather,toss_decision,2,first["runs"]+1,None if seed is None else seed+1,commentary,probability_cache)
     else:
-        first = simulate_innings(team2, team1, xi2, xi1, models, meta, model_name, venue,pitch,weather,toss_decision,1,None,seed,commentary)
-        second = simulate_innings(team1, team2, xi1, xi2, models, meta, model_name, venue,pitch,weather,toss_decision,2,first["runs"]+1,None if seed is None else seed+1,commentary)
+        first = simulate_innings(team2, team1, xi2, xi1, models, meta, model_name, venue,pitch,weather,toss_decision,1,None,seed,commentary,probability_cache)
+        second = simulate_innings(team1, team2, xi1, xi2, models, meta, model_name, venue,pitch,weather,toss_decision,2,first["runs"]+1,None if seed is None else seed+1,commentary,probability_cache)
     if second["runs"] >= first["runs"]+1:
         winner = second["team"]; margin = f"by {10-second['wickets']} wickets"
     elif first["runs"] > second["runs"]:
@@ -283,8 +498,15 @@ def simulate_match(team1, team2, xi1, xi2, models, meta, model_name, venue, pitc
 def simulate_distribution(n, *args, **kwargs):
     rows=[]
     base_seed = kwargs.pop("seed", None)
+    probability_cache = {}
     for i in range(n):
-        res = simulate_match(*args, seed=None if base_seed is None else base_seed+i, commentary=False, **kwargs)
+        res = simulate_match(
+            *args,
+            seed=None if base_seed is None else base_seed+i,
+            commentary=False,
+            probability_cache=probability_cache,
+            **kwargs,
+        )
         rows.append({"sim":i+1,"winner":res["winner"],"first_runs":res["first"]["runs"],"second_runs":res["second"]["runs"],"first_wickets":res["first"]["wickets"],"second_wickets":res["second"]["wickets"]})
     return pd.DataFrame(rows)
     

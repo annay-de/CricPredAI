@@ -1,17 +1,23 @@
-# Data probe: downloads IPL dataset from Kaggle and verifies it loads correctly.
-# Run this once to confirm data access: python Data/data_probe.py
-# Requires: pip install kagglehub[pandas-datasets]
+from __future__ import annotations
 
-import kagglehub
-from kagglehub import KaggleDatasetAdapter
+from pathlib import Path
+import sys
 
-df = kagglehub.load_dataset(
-    KaggleDatasetAdapter.PANDAS,
-    "chaitu20/ipl-dataset2008-2025",
-    "",
-)
+ROOT = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(ROOT))
 
-print(f"Rows: {len(df)}")
-print(f"Columns: {list(df.columns)}")
-print("First 3 rows:")
-print(df.head(3))
+from data_pipeline import load_dataset_source, prepare_deliveries
+
+SOURCE = ROOT / "Data" / "ipl_dataset"
+
+if not SOURCE.exists():
+    raise FileNotFoundError(
+        "Download the dataset first with: python Data/download_dataset.py"
+    )
+
+deliveries = prepare_deliveries(load_dataset_source(SOURCE))
+print(f"Deliveries: {len(deliveries):,}")
+print(f"Matches: {deliveries['match_id'].nunique():,}")
+print(f"Coverage: {deliveries['date'].min().date()} to {deliveries['date'].max().date()}")
+print(f"Canonical venues: {deliveries['venue'].nunique()}")
+print(f"Outcomes: {deliveries['outcome'].value_counts().to_dict()}")
