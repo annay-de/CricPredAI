@@ -21,7 +21,7 @@ To launch the interactive decision-support app:
 streamlit run app.py
 
 
-Live deployment: https://cricpredai3.streamlit.app/
+Live deployment: https://cricpredai.streamlit.app/
 
 ---
 
