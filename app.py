@@ -606,10 +606,10 @@ def render_header() -> None:
         """
         <div class="site-head">
             <div class="brand">
-                <div class="brand-mark">CP</div>
+                <div class="brand-mark">🏏</div>
                 <div>
                     <div class="brand-name">CricPred</div>
-                    <div class="brand-sub">IPL simulation laboratory</div>
+                    <div class="brand-sub">IPL ML Simulator</div>
                 </div>
             </div>
             <div class="coverage">
@@ -626,19 +626,19 @@ def render_match_lab() -> None:
     st.markdown(
         """
         <div class="hero">
-            <div class="eyebrow">Pre-match decision support</div>
-            <h1>Build two XIs. Test the matchup, not the mythology.</h1>
+            <div class="eyebrow">models Trained on historical data</div>
+            <h1>Build two teams and simulate, in a stadium. Test the matchup.</h1>
             <div class="hero-copy">
                 A ball-by-ball IPL simulator trained on 288,051 deliveries.
                 Select a data profile, set the batting order through the toss,
-                and compare one match with a repeated-match distribution.
+                and compare one match with a repeated-match distribution, calculated by different Machinf Learning Models.
             </div>
         </div>
         """,
         unsafe_allow_html=True,
     )
 
-    section_header("Model basis", "Choose how historical evidence should be weighted")
+    section_header("Model basis", "Choose how historical player data should be weighted")
     profile = st.radio(
         "Data profile",
         available_profiles(),
@@ -839,7 +839,7 @@ def render_results() -> None:
                 <div class="hero-copy">
                     Build two playing XIs in Match Lab, choose the evidence profile,
                     and run the matchup. The scorecard and repeated-match distribution
-                    will remain available here while you explore the site.
+                    will remain available here.
                 </div>
             </div>
             """,
@@ -1017,7 +1017,7 @@ def render_model_notes() -> None:
         """
         <div class="hero">
             <div class="eyebrow">Model notes</div>
-            <h1>Two histories, one simulation engine.</h1>
+            <h1>Every combination, one simulation engine.</h1>
             <div class="hero-copy">
                 Modern mode emphasizes current IPL form. Lifetime mode keeps the
                 full career record intact for legends and cross-era comparisons.
@@ -1115,7 +1115,7 @@ def render_model_notes() -> None:
             unsafe_allow_html=True,
         )
 
-    section_header("Intentionally excluded", "No unsupported theatre")
+    section_header("Excluded Aspects")
     excluded = [
         (
             "Weather",
@@ -1170,7 +1170,7 @@ st.markdown(
     <div class="footer">
         <div>CricPred | IPL simulation laboratory</div>
         <div>
-            Built by Annay De |
+            Built by <span class="creator-name">Annay De</span> |
             <a href="https://www.linkedin.com/in/annayde/" target="_blank" rel="noopener noreferrer">LinkedIn</a> |
             <a href="https://x.com/AnnayDe_" target="_blank" rel="noopener noreferrer">X</a>
         </div>
