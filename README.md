@@ -56,7 +56,30 @@ The resource-allocation problem: a franchise has a squad of ~20 players and must
 
 ## Deploying
 
+### Streamlit Cloud
+
 Deploy `app.py` on Streamlit Cloud. The app loads saved artefacts from `artifacts/` and does not require `IPL.csv` at runtime.
+
+1. Push the repository to GitHub.
+2. Connect the repo in Streamlit Cloud.
+3. Set the app entrypoint to `app.py` if prompted.
+
+### Docker
+
+A `Dockerfile` and `.dockerignore` are included for container-based deployment.
+
+Build and run locally:
+
+```bash
+docker build -t cricpredai .
+docker run -p 8501:8501 cricpredai
+```
+
+On platforms that use `Procfile`, the provided `Procfile` starts the app with:
+
+```bash
+web: streamlit run app.py --server.port=$PORT --server.address=0.0.0.0
+```
 
 ## Retraining
 

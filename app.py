@@ -4,13 +4,27 @@ import numpy as np
 import plotly.graph_objects as go
 from simulator import load_artifacts, simulate_match, simulate_distribution
 
-st.set_page_config(page_title="CricPredAI V3.0", page_icon="🏏", layout="wide")
+st.set_page_config(page_title="CricPredAI", page_icon="🏏", layout="wide")
 st.markdown("""
 <style>
-.block-container {padding-top: 1.4rem;}
+.block-container {padding-top: 1.4rem; padding-bottom: 4rem;}
 .stButton button {border-radius: 10px; font-weight: 600;}
 .big-card {border: 1px solid rgba(255,255,255,.12); border-radius: 16px; padding: 16px; margin: 8px 0;}
 .small-muted {opacity: .75; font-size: .9rem;}
+.app-footer {
+  background: rgba(255,255,255,0.95);
+  color: #111;
+  border-top: 1px solid rgba(0,0,0,0.08);
+  padding: 0.75rem 1rem;
+  text-align: center;
+  font-size: 0.9rem;
+  margin-top: 2rem;
+}
+.app-footer a {
+  color: #0A66C2;
+  text-decoration: none;
+  margin: 0 0.4rem;
+}
 </style>
 """, unsafe_allow_html=True)
 
@@ -20,12 +34,29 @@ def cached_artifacts():
 
 meta, report, models = cached_artifacts()
 players = meta.get("players", [])
+
+# Default XIs are two distinct sample IPL squads for easier testing.
+default_xi1 = [
+    'AB de Villiers', 'AC Gilchrist', 'AD Hales', 'A Symonds', 'A Flintoff',
+    'A Kumble', 'MS Dhoni', 'V Kohli', 'RG Sharma', 'SK Raina', 'CH Gayle'
+]
+default_xi2 = [
+    'DA Warner', 'JP Duminy', 'YK Pathan', 'I Sharma', 'RV Uthappa',
+    'KD Karthik', 'PP Chawla', 'UT Yadav', 'SP Narine', 'BB McCullum', 'SC Ganguly'
+]
+
+default_xi1 = [player for player in default_xi1 if player in players]
+default_xi2 = [player for player in default_xi2 if player in players]
+if len(default_xi1) != 11 or len(default_xi2) != 11:
+    default_xi1 = players[:11] if len(players) >= 11 else players
+    default_xi2 = players[11:22] if len(players) >= 22 else players[:11]
+
 venues = ["Unknown"] + meta.get("venues", [])
 model_names = list(models.keys())
 preferred = ["calibrated_blend", "baseline_prior", "logistic_calibrated", "random_forest", "xgboost", "hist_gradient_boosting", "extra_trees"]
 choices = [m for m in preferred if (m in model_names or m=="calibrated_blend")] + [m for m in model_names if m not in preferred]
 
-st.title("CricPredAI V3.0")
+st.title("CricPredAI")
 st.caption("Ball-by-ball IPL decision-support simulator with playing XI selection, match conditions, model choice, scorecards, rule checks, and optional commentary.")
 
 with st.sidebar:
@@ -45,9 +76,9 @@ with st.sidebar:
 st.subheader("Playing XI selection")
 col1, col2 = st.columns(2)
 with col1:
-    xi1 = st.multiselect(f"{team1} playing XI", players, default=players[:11] if len(players)>=11 else players, max_selections=11)
+    xi1 = st.multiselect(f"{team1} playing XI", players, default=default_xi1, max_selections=11)
 with col2:
-    xi2 = st.multiselect(f"{team2} playing XI", players, default=players[11:22] if len(players)>=22 else players[:11], max_selections=11)
+    xi2 = st.multiselect(f"{team2} playing XI", players, default=default_xi2, max_selections=11)
 
 if len(xi1) != 11 or len(xi2) != 11:
     st.warning("Select exactly 11 players for both teams before simulating.")
@@ -125,4 +156,15 @@ if run:
         st.plotly_chart(f, use_container_width=True)
 else:
     st.info("Select two playing XIs and click Simulate match.")
+
+st.markdown(
+    """
+    <div class='app-footer'>
+      Built by <strong>Annay De</strong> —
+      <a href='https://www.linkedin.com/in/annayde/' target='_blank' rel='noopener noreferrer'>LinkedIn</a>
+      | <a href='https://x.com/AnnayDe_' target='_blank' rel='noopener noreferrer'>X</a>
+    </div>
+    """,
+    unsafe_allow_html=True,
+)
 
