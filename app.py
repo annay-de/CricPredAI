@@ -10,6 +10,7 @@ import streamlit as st
 from simulator import (
     available_profiles,
     load_artifacts,
+    representative_seed,
     simulate_distribution,
     simulate_match,
 )
@@ -571,34 +572,94 @@ def score_progression_figure(result: dict) -> go.Figure:
 
 def probability_figure(distribution: pd.DataFrame, result: dict) -> go.Figure:
     figure = go.Figure()
-    figure.add_trace(
-        go.Histogram(
-            x=distribution["first_runs"],
-            name=result["first"]["team"],
-            marker_color=COLORS["blue"],
-            opacity=0.78,
+    palette = {
+        result["first"]["team"]: COLORS["blue"],
+        result["second"]["team"]: COLORS["copper"],
+        "Tie": COLORS["gold"],
+    }
+    for winner, group in distribution.groupby("winner", sort=False):
+        figure.add_trace(
+            go.Scatter(
+                x=group["first_runs"],
+                y=group["second_runs"],
+                mode="markers",
+                name=str(winner),
+                marker={
+                    "color": palette.get(str(winner), COLORS["muted"]),
+                    "size": 11,
+                    "opacity": 0.78,
+                    "line": {"color": COLORS["panel"], "width": 1},
+                },
+                customdata=np.column_stack([group["sim"], group["seed"]]),
+                hovertemplate=(
+                    "Simulation %{customdata[0]}<br>"
+                    "Seed %{customdata[1]}<br>"
+                    f"{result['first']['team']}: %{{x}}<br>"
+                    f"{result['second']['team']}: %{{y}}"
+                    "<extra>%{fullData.name}</extra>"
+                ),
+            )
         )
+    score_min = int(
+        min(distribution["first_runs"].min(), distribution["second_runs"].min())
     )
+    score_max = int(
+        max(distribution["first_runs"].max(), distribution["second_runs"].max())
+    )
+    padding = max(5, int((score_max - score_min) * 0.06))
+    lower = max(0, score_min - padding)
+    upper = score_max + padding
     figure.add_trace(
-        go.Histogram(
-            x=distribution["second_runs"],
-            name=result["second"]["team"],
-            marker_color=COLORS["copper"],
-            opacity=0.68,
+        go.Scatter(
+            x=[lower, upper],
+            y=[lower, upper],
+            mode="lines",
+            name="Scores level",
+            line={"color": COLORS["muted"], "width": 1.5, "dash": "dash"},
+            hoverinfo="skip",
         )
     )
     figure.update_layout(
-        barmode="overlay",
-        height=390,
+        height=440,
         margin={"l": 10, "r": 10, "t": 20, "b": 10},
         paper_bgcolor="rgba(0,0,0,0)",
         plot_bgcolor=COLORS["panel"],
         font={"color": COLORS["ink"], "family": "Arial, sans-serif"},
         legend={"orientation": "h", "y": 1.08, "x": 0},
-        xaxis={"title": "Runs", "gridcolor": COLORS["line"], "zeroline": False},
-        yaxis={"title": "Simulations", "gridcolor": COLORS["line"], "zeroline": False},
+        xaxis={
+            "title": f"{result['first']['team']} runs (batting first)",
+            "gridcolor": COLORS["line"],
+            "zeroline": False,
+            "range": [lower, upper],
+        },
+        yaxis={
+            "title": f"{result['second']['team']} runs (chasing)",
+            "gridcolor": COLORS["line"],
+            "zeroline": False,
+            "range": [lower, upper],
+            "scaleanchor": "x",
+            "scaleratio": 1,
+        },
     )
     return figure
+
+
+def wilson_interval(successes: int, total: int) -> tuple[float, float]:
+    if total <= 0:
+        return 0.0, 0.0
+    z = 1.96
+    proportion = successes / total
+    denominator = 1 + z**2 / total
+    center = (proportion + z**2 / (2 * total)) / denominator
+    half_width = (
+        z
+        * np.sqrt(
+            proportion * (1 - proportion) / total
+            + z**2 / (4 * total**2)
+        )
+        / denominator
+    )
+    return max(0.0, center - half_width), min(1.0, center + half_width)
 
 
 def render_header() -> None:
@@ -735,7 +796,7 @@ def render_match_lab() -> None:
             "Repeated simulations",
             min_value=10,
             max_value=100,
-            value=25,
+            value=50,
             step=5,
             key=f"simulations_{profile}",
         )
@@ -772,22 +833,6 @@ def render_match_lab() -> None:
             f"Running one scorecard and {simulations} repeated matches using "
             f"{PROFILE_LABELS[profile].lower()}..."
         ):
-            result = simulate_match(
-                team_a,
-                team_b,
-                xi_a,
-                xi_b,
-                models,
-                meta,
-                model_name,
-                venue,
-                "data-driven",
-                "data-driven",
-                toss_winner,
-                toss_decision,
-                seed=int(seed),
-                commentary=False,
-            )
             distribution = simulate_distribution(
                 simulations,
                 team_a,
@@ -804,6 +849,23 @@ def render_match_lab() -> None:
                 toss_decision,
                 seed=int(seed) + 1000,
             )
+            scorecard_seed = representative_seed(distribution)
+            result = simulate_match(
+                team_a,
+                team_b,
+                xi_a,
+                xi_b,
+                models,
+                meta,
+                model_name,
+                venue,
+                "data-driven",
+                "data-driven",
+                toss_winner,
+                toss_decision,
+                seed=scorecard_seed,
+                commentary=False,
+            )
         st.session_state["latest_run"] = {
             "result": result,
             "distribution": distribution,
@@ -813,6 +875,7 @@ def render_match_lab() -> None:
                 "venue": venue,
                 "simulations": simulations,
                 "seed": int(seed),
+                "scorecard_seed": scorecard_seed,
                 "toss_winner": toss_winner,
                 "toss_decision": toss_decision,
             },
@@ -860,6 +923,21 @@ def render_results() -> None:
         </div>
         """,
         unsafe_allow_html=True,
+    )
+    modal_winner = str(distribution["winner"].value_counts().index[0])
+    representative_number = distribution.loc[
+        distribution["seed"].eq(config.get("scorecard_seed")),
+        "sim",
+    ]
+    representative_label = (
+        f"Simulation {int(representative_number.iloc[0])}"
+        if not representative_number.empty
+        else "Representative simulation"
+    )
+    st.caption(
+        f"Displayed scorecard: {representative_label} from this distribution "
+        f"(seed {config.get('scorecard_seed')}); selected near the center of "
+        f"the most frequent outcome, {modal_winner}."
     )
 
     scores = st.columns(2)
@@ -933,6 +1011,13 @@ def render_results() -> None:
                 st.markdown('<div class="innings-divider"></div>', unsafe_allow_html=True)
 
     with probability_tab:
+        st.markdown("#### Paired simulation outcomes")
+        st.caption(
+            "Each dot is one complete match. Dots above the dashed line are "
+            f"{result['second']['team']} chase wins; dots below it are "
+            f"{result['first']['team']} wins. This preserves which two scores "
+            "belonged to the same simulation."
+        )
         st.plotly_chart(
             probability_figure(distribution, result),
             width="stretch",
@@ -947,6 +1032,12 @@ def render_results() -> None:
         probability_table["Probability"] = (
             probability_table["Simulations"] / len(distribution)
         )
+        probability_table["95% interval"] = [
+            (
+                lambda interval: f"{100 * interval[0]:.0f}% - {100 * interval[1]:.0f}%"
+            )(wilson_interval(int(count), len(distribution)))
+            for count in probability_table["Simulations"]
+        ]
         st.dataframe(
             probability_table,
             width="stretch",
@@ -960,6 +1051,12 @@ def render_results() -> None:
                 )
             },
         )
+        if len(distribution) < 50:
+            st.warning(
+                f"Only {len(distribution)} repeated matches were run. Treat these "
+                "probabilities as a rough sample; use at least 50 simulations "
+                "before comparing team strength."
+            )
 
     with delivery_tab:
         innings_choice = st.radio(

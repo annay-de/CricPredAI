@@ -532,11 +532,17 @@ def simulate_innings(team_name: str, opponent: str, batting_xi: List[str], bowli
                 innings,
                 over,
                 int(row["legal_ball"]),
-                int(row["team_runs"]) // 5,
+                int(row["balls_bowled"]),
+                int(row["balls_remaining"]),
+                int(row["team_runs"]),
                 int(row["team_wicket"]),
-                int(row["batter_runs"]) // 5,
-                int(row["batter_balls"]) // 3,
-                round(float(row["required_run_rate"]) * 2) / 2,
+                int(row["target"]),
+                int(row["runs_required"]),
+                round(float(row["current_run_rate"]), 4),
+                round(float(row["required_run_rate"]), 4),
+                round(float(row["rate_pressure"]), 4),
+                int(row["batter_runs"]),
+                int(row["batter_balls"]),
                 delivery_batter,
                 current_bowler,
                 str(row["venue"]),
@@ -678,13 +684,43 @@ def simulate_distribution(n, *args, **kwargs):
     base_seed = kwargs.pop("seed", None)
     probability_cache = {}
     for i in range(n):
+        simulation_seed = None if base_seed is None else base_seed+i
         res = simulate_match(
             *args,
-            seed=None if base_seed is None else base_seed+i,
+            seed=simulation_seed,
             commentary=False,
             probability_cache=probability_cache,
             **kwargs,
         )
-        rows.append({"sim":i+1,"winner":res["winner"],"first_runs":res["first"]["runs"],"second_runs":res["second"]["runs"],"first_wickets":res["first"]["wickets"],"second_wickets":res["second"]["wickets"]})
+        rows.append({
+            "sim": i + 1,
+            "seed": simulation_seed,
+            "winner": res["winner"],
+            "first_team": res["first"]["team"],
+            "second_team": res["second"]["team"],
+            "first_runs": res["first"]["runs"],
+            "second_runs": res["second"]["runs"],
+            "first_wickets": res["first"]["wickets"],
+            "second_wickets": res["second"]["wickets"],
+        })
     return pd.DataFrame(rows)
+
+
+def representative_seed(distribution: pd.DataFrame) -> Optional[int]:
+    if distribution.empty or "seed" not in distribution or distribution["seed"].isna().all():
+        return None
+    winner_counts = distribution["winner"].value_counts()
+    modal_winner = str(winner_counts.index[0])
+    candidates = distribution[distribution["winner"].eq(modal_winner)].copy()
+    centers = candidates[["first_runs", "second_runs"]].median()
+    scales = candidates[["first_runs", "second_runs"]].std().replace(0, 1).fillna(1)
+    candidates["_representative_distance"] = (
+        ((candidates[["first_runs", "second_runs"]] - centers) / scales) ** 2
+    ).sum(axis=1)
+    return int(
+        candidates.sort_values(
+            ["_representative_distance", "sim"],
+            kind="stable",
+        ).iloc[0]["seed"]
+    )
     

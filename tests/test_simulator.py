@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import numpy as np
+import pandas as pd
 
 from simulator import (
     apply_player_matchup,
@@ -8,6 +9,7 @@ from simulator import (
     available_profiles,
     load_artifacts,
     outcome_to_runs,
+    representative_seed,
     sample_dismissal,
     vector_input,
 )
@@ -183,3 +185,16 @@ def test_chase_calibration_adds_failure_cost_without_team_bias():
     assert sum(chase[str(run)] * run for run in [1, 2, 3, 4, 6]) < sum(
         base[str(run)] * run for run in [1, 2, 3, 4, 6]
     )
+
+
+def test_representative_scorecard_seed_comes_from_modal_outcome():
+    distribution = pd.DataFrame(
+        [
+            {"sim": 1, "seed": 1001, "winner": "Strong", "first_runs": 190, "second_runs": 150},
+            {"sim": 2, "seed": 1002, "winner": "Strong", "first_runs": 180, "second_runs": 160},
+            {"sim": 3, "seed": 1003, "winner": "Strong", "first_runs": 200, "second_runs": 140},
+            {"sim": 4, "seed": 1004, "winner": "Weak", "first_runs": 150, "second_runs": 151},
+        ]
+    )
+
+    assert representative_seed(distribution) == 1001
