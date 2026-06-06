@@ -992,6 +992,9 @@ def render_results() -> None:
             "runs",
             "extras",
             "wicket",
+            "dismissal_kind",
+            "dismissal",
+            "fielder",
             "score",
             "wickets",
             "p_wicket",
@@ -1086,7 +1089,7 @@ def render_model_notes() -> None:
     supported = [
         (
             "Playing XI",
-            "Player and bowler histories alter delivery probabilities, batting order, and bowling selection.",
+            "Player histories calibrate batter-bowler matchups, batting order, fielding attribution, and bowling selection.",
         ),
         (
             "Evidence profile",
@@ -1127,7 +1130,7 @@ def render_model_notes() -> None:
         ),
         (
             "Manual probability boosts",
-            "The interface does not apply hand-written boundary, wicket, dew, or rain multipliers.",
+            "No weather, dew, or pitch multipliers are applied. Matchup and chase calibration is versioned with the model artifacts and release-tested.",
         ),
     ]
     for name, description in excluded:

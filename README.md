@@ -46,6 +46,9 @@ The resource-allocation problem: a franchise has a squad of ~20 players and must
 - Chronological match-level train/calibration/test split and validation-selected probability calibration
 - Five-year recency half-life so current IPL scoring patterns matter more than early-era matches
 - Canonical venue and franchise names shared by training and simulation
+- Data-derived batter-versus-bowler calibration so lineup quality remains decisive in either innings
+- Mirrored release checks against the historical IPL chase rate and strong-versus-weak XIs
+- Dataset-derived dismissal types and fielder attribution instead of assigning every catch to the bowler
 - Full-data XGBoost and logistic models instead of tiny random row samples
 - Versioned, compact runtime artifacts; the raw dataset is not needed for simulations
 - Removed unreliable preset team-pool dependency from main workflow

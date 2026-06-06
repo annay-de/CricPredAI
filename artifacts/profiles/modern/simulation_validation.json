@@ -5,15 +5,21 @@
   "historical_settled_matches": 1190,
   "historical_chase_win_rate": 0.5454,
   "mirror_xi": {
-    "simulations": 100,
-    "batting_first_wins": 49,
-    "chasing_wins": 51,
+    "simulations": 60,
+    "batting_first_wins": 27,
+    "chasing_wins": 33,
     "ties": 0,
-    "chase_win_rate": 0.51
+    "chase_win_rate": 0.55
   },
   "strength_sensitivity": {
-    "simulations_per_direction": 20,
-    "weak_xi_chasing_strong_xi_win_rate": 0.35,
-    "strong_xi_chasing_weak_xi_win_rate": 0.7
-  }
+    "simulations_per_direction": 30,
+    "weak_xi_chasing_strong_xi_win_rate": 0.1,
+    "strong_xi_chasing_weak_xi_win_rate": 0.8667
+  },
+  "release_checks": {
+    "mirror_chase_rate_near_history": true,
+    "weak_xi_does_not_win_from_innings_order": true,
+    "strong_xi_remains_dominant_when_chasing": true
+  },
+  "release_checks_passed": true
 }

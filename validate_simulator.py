@@ -66,7 +66,7 @@ def main() -> None:
     parser.add_argument("--data", type=Path, default=ROOT / "Data" / "ipl_dataset")
     parser.add_argument("--model", default="xgboost")
     parser.add_argument("--profile", choices=["modern", "lifetime"], default="modern")
-    parser.add_argument("--simulations", type=int, default=100)
+    parser.add_argument("--simulations", type=int, default=60)
     parser.add_argument(
         "--output",
         type=Path,
@@ -77,7 +77,7 @@ def main() -> None:
     meta, _, models = load_artifacts(args.profile)
     strong = select_xi(meta, strongest=True)
     weak = select_xi(meta, strongest=False)
-    scenario_runs = max(20, args.simulations // 5)
+    scenario_runs = max(30, args.simulations // 2)
     common = (
         models,
         meta,
@@ -118,6 +118,14 @@ def main() -> None:
     )
     historical_n, historical_rate = historical_chase_rate(args.data)
 
+    mirror_chase_rate = win_rate(mirror, "Team B")
+    weak_chase_rate = win_rate(weak_chase, "Team B")
+    strong_chase_rate = win_rate(strong_chase, "Team B")
+    checks = {
+        "mirror_chase_rate_near_history": abs(mirror_chase_rate - historical_rate) <= 0.12,
+        "weak_xi_does_not_win_from_innings_order": weak_chase_rate <= 0.25,
+        "strong_xi_remains_dominant_when_chasing": strong_chase_rate >= 0.75,
+    }
     result = {
         "dataset": meta.get("data_source"),
         "coverage_end": meta.get("data_end_date"),
@@ -129,13 +137,15 @@ def main() -> None:
             "batting_first_wins": int(mirror["winner"].eq("Team A").sum()),
             "chasing_wins": int(mirror["winner"].eq("Team B").sum()),
             "ties": int(mirror["winner"].eq("Tie").sum()),
-            "chase_win_rate": round(win_rate(mirror, "Team B"), 4),
+            "chase_win_rate": round(mirror_chase_rate, 4),
         },
         "strength_sensitivity": {
             "simulations_per_direction": scenario_runs,
-            "weak_xi_chasing_strong_xi_win_rate": round(win_rate(weak_chase, "Team B"), 4),
-            "strong_xi_chasing_weak_xi_win_rate": round(win_rate(strong_chase, "Team B"), 4),
+            "weak_xi_chasing_strong_xi_win_rate": round(weak_chase_rate, 4),
+            "strong_xi_chasing_weak_xi_win_rate": round(strong_chase_rate, 4),
         },
+        "release_checks": checks,
+        "release_checks_passed": all(checks.values()),
     }
     output = args.output or (
         ROOT / "artifacts" / "profiles" / args.profile / "simulation_validation.json"
@@ -143,6 +153,8 @@ def main() -> None:
     output.parent.mkdir(parents=True, exist_ok=True)
     output.write_text(json.dumps(result, indent=2), encoding="utf-8")
     print(json.dumps(result, indent=2))
+    if not all(checks.values()):
+        raise SystemExit("Simulation behavioral release checks failed.")
 
 
 if __name__ == "__main__":

@@ -11,6 +11,15 @@ from probability import calibrated_blend, empirical_array, normalize_array, norm
 
 LEGAL_OUTCOMES = {"0","1","2","3","4","6","W","LB","B"}
 EXTRA_OUTCOMES = {"WD","NB"}
+DEFAULT_DISMISSAL_PROBABILITIES = {
+    "caught": 0.6325,
+    "caught_and_bowled": 0.0279,
+    "bowled": 0.1681,
+    "lbw": 0.0610,
+    "stumped": 0.0267,
+    "run_out": 0.0825,
+    "hit_wicket": 0.0013,
+}
 
 ART = Path(__file__).resolve().parent / "artifacts"
 
@@ -252,6 +261,79 @@ def rotate_strike(striker, non_striker):
     return non_striker, striker
 
 
+def _choose_fielder(
+    bowling_xi: List[str],
+    bowler: str,
+    meta: dict,
+    metric: str,
+    rng: np.random.Generator,
+) -> Optional[str]:
+    candidates = [player for player in bowling_xi if player != bowler]
+    if not candidates:
+        return None
+    fielding = meta.get("fielding", {})
+    weights = np.array(
+        [max(0.0, float(fielding.get(player, {}).get(metric, 0.0))) for player in candidates],
+        dtype=float,
+    )
+    if weights.sum() <= 0:
+        weights = np.ones(len(candidates), dtype=float)
+    else:
+        weights += max(0.25, float(np.median(weights[weights > 0])) * 0.10)
+    return str(rng.choice(candidates, p=weights / weights.sum()))
+
+
+def sample_dismissal(
+    bowling_xi: List[str],
+    bowler: str,
+    meta: dict,
+    rng: np.random.Generator,
+) -> dict:
+    configured = meta.get("dismissal_probabilities", {})
+    probabilities = {
+        kind: max(
+            0.0,
+            float(configured.get(kind, 0.0) if configured else fallback),
+        )
+        for kind, fallback in DEFAULT_DISMISSAL_PROBABILITIES.items()
+    }
+    kinds = list(probabilities)
+    weights = normalize_array([probabilities[kind] for kind in kinds])
+    kind = str(rng.choice(kinds, p=weights))
+    fielder = ""
+    bowler_credit = kind != "run_out"
+
+    if kind == "caught":
+        fielder = _choose_fielder(bowling_xi, bowler, meta, "catches", rng) or ""
+        if fielder:
+            text = f"c {fielder} b {bowler}"
+        else:
+            kind = "caught_and_bowled"
+            text = f"c & b {bowler}"
+    elif kind == "caught_and_bowled":
+        fielder = bowler
+        text = f"c & b {bowler}"
+    elif kind == "bowled":
+        text = f"b {bowler}"
+    elif kind == "lbw":
+        text = f"lbw b {bowler}"
+    elif kind == "stumped":
+        fielder = _choose_fielder(bowling_xi, bowler, meta, "stumpings", rng) or ""
+        text = f"st {fielder} b {bowler}" if fielder else f"st b {bowler}"
+    elif kind == "run_out":
+        fielder = _choose_fielder(bowling_xi, bowler, meta, "run_outs", rng) or ""
+        text = f"run out ({fielder})" if fielder else "run out"
+    else:
+        text = f"hit wicket b {bowler}"
+
+    return {
+        "kind": kind,
+        "text": text,
+        "fielder": fielder,
+        "bowler_credit": bowler_credit,
+    }
+
+
 def _sample_extra_runs(priors: dict, outcome: str, rng: np.random.Generator) -> int:
     values = priors.get("extra_runs", {}).get(outcome, [1])
     if isinstance(values, dict):
@@ -315,6 +397,91 @@ def apply_match_context(
             adjusted["W"] *= 1.0 - control
             adjusted["6"] *= 1.0 - control / 2
             adjusted["1"] *= 1.0 + control / 2
+    return normalise(adjusted)
+
+
+def apply_player_matchup(
+    probabilities: Dict[str, float],
+    batter: str,
+    bowler: str,
+    meta: dict,
+) -> Dict[str, float]:
+    roles = meta.get("roles", {})
+    baselines = meta.get("player_rate_baselines", {})
+    batter_stats = roles.get(batter, {})
+    bowler_stats = roles.get(bowler, {})
+    baseline_bat_rate = max(0.1, float(baselines.get("bat_runs_per_ball", 1.35)))
+    baseline_dismissal = max(0.005, float(baselines.get("dismissal_rate", 0.05)))
+    baseline_bowl_rate = max(0.1, float(baselines.get("bowl_runs_per_ball", 1.40)))
+    baseline_wicket_rate = max(0.005, float(baselines.get("wicket_rate", 0.05)))
+
+    batter_run_ratio = float(
+        np.clip(
+            float(batter_stats.get("bat_runs_per_ball", baseline_bat_rate))
+            / baseline_bat_rate,
+            0.72,
+            1.35,
+        )
+    )
+    bowler_run_ratio = float(
+        np.clip(
+            baseline_bowl_rate
+            / float(bowler_stats.get("bowl_runs_per_ball", baseline_bowl_rate)),
+            0.72,
+            1.35,
+        )
+    )
+    dismissal_ratio = float(
+        np.clip(
+            float(batter_stats.get("dismissal_rate", baseline_dismissal))
+            / baseline_dismissal,
+            0.70,
+            1.45,
+        )
+    )
+    bowler_wicket_ratio = float(
+        np.clip(
+            float(bowler_stats.get("wicket_rate", baseline_wicket_rate))
+            / baseline_wicket_rate,
+            0.70,
+            1.45,
+        )
+    )
+    strength = max(0.0, float(meta.get("matchup_adjustment_strength", 1.0)))
+    run_ratio = (batter_run_ratio * bowler_run_ratio) ** strength
+    wicket_ratio = (dismissal_ratio * bowler_wicket_ratio) ** strength
+
+    adjusted = dict(probabilities)
+    adjusted["0"] *= run_ratio ** -0.65
+    adjusted["1"] *= run_ratio ** 0.35
+    adjusted["2"] *= run_ratio ** 0.75
+    adjusted["3"] *= run_ratio ** 0.75
+    adjusted["4"] *= run_ratio ** 1.15
+    adjusted["6"] *= run_ratio ** 1.40
+    adjusted["W"] *= wicket_ratio
+    return normalise(adjusted)
+
+
+def apply_simulation_calibration(
+    probabilities: Dict[str, float],
+    innings: int,
+    meta: dict,
+) -> Dict[str, float]:
+    if innings != 2:
+        return dict(probabilities)
+    calibration = meta.get("simulation_calibration", {})
+    scoring_multiplier = max(
+        0.1,
+        float(calibration.get("chase_scoring_multiplier", 1.0)),
+    )
+    wicket_multiplier = max(
+        0.1,
+        float(calibration.get("chase_wicket_multiplier", 1.0)),
+    )
+    adjusted = dict(probabilities)
+    for outcome in ["1", "2", "3", "4", "6"]:
+        adjusted[outcome] *= scoring_multiplier
+    adjusted["W"] *= wicket_multiplier
     return normalise(adjusted)
 
 
@@ -390,6 +557,13 @@ def simulate_innings(team_name: str, opponent: str, batting_xi: List[str], bowli
             target=target,
             learned_chase_context=int(meta.get("artifact_schema", 0)) >= 4,
         )
+        p = apply_player_matchup(
+            p,
+            delivery_batter,
+            current_bowler,
+            meta,
+        )
+        p = apply_simulation_calibration(p, innings, meta)
         out = rng.choice(OUTCOMES, p=[p[o] for o in OUTCOMES])
         if out == "W" and free_hit:
             out = "1" if rng.random() < 0.45 else "0"
@@ -415,11 +589,14 @@ def simulate_innings(team_name: str, opponent: str, batting_xi: List[str], bowli
         state["bat_runs"][delivery_batter] = bat[delivery_batter]["R"]
 
         dismissed = ""
+        dismissal = {"kind": "", "text": "", "fielder": "", "bowler_credit": False}
         if wicket:
             state["wickets"] += 1; over_wkts += 1
-            bowl[current_bowler]["W"] += 1
             dismissed = delivery_batter
-            bat[delivery_batter]["out"] = f"c/b {current_bowler}" if rng.random()<0.55 else f"b {current_bowler}"
+            dismissal = sample_dismissal(bowling_xi, current_bowler, meta, rng)
+            if dismissal["bowler_credit"]:
+                bowl[current_bowler]["W"] += 1
+            bat[delivery_batter]["out"] = dismissal["text"]
             fow.append({"wicket":state["wickets"], "score":state["runs"], "over":f"{over}.{legal_in_over}", "player":delivery_batter})
             nb = choose_next_batter(batters, used_batters, meta, phase, state["wickets"])
             if nb is None or state["wickets"] >= 10:
@@ -442,6 +619,7 @@ def simulate_innings(team_name: str, opponent: str, batting_xi: List[str], bowli
             else: comm = f"{current_bowler} to {delivery_batter}, {runs} run{'s' if runs!=1 else ''}."
         rows.append({"ball":label,"over":over,"legal_ball_in_over":legal_in_over,"phase":phase,"bowler":current_bowler,"batter":delivery_batter,
                      "outcome":out,"runs":runs,"batter_runs":bruns,"extras":max(0,runs-bruns),"extra_type":extra_type,"wicket":wicket,
+                     "dismissal_kind":dismissal["kind"],"dismissal":dismissal["text"],"fielder":dismissal["fielder"],
                      "score":state["runs"],"wickets":state["wickets"],"p_wicket":round(p["W"],4),"p_boundary":round(p["4"]+p["6"],4),
                      "p_extra":round(p["WD"]+p["NB"]+p["LB"]+p["B"],4),"bowler_reason": reason if legal_in_over<=1 else "", "commentary":comm})
 

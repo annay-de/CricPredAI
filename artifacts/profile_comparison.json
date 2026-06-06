@@ -4,13 +4,19 @@
       "weighting": "five-year recency half-life",
       "best_model": "xgboost",
       "test_log_loss": 1.8292894450677848,
-      "mirror_xi_chase_win_rate": 0.51
+      "mirror_xi_chase_win_rate": 0.55,
+      "weak_xi_chasing_strong_xi_win_rate": 0.1,
+      "strong_xi_chasing_weak_xi_win_rate": 0.8667,
+      "release_checks_passed": true
     },
     "lifetime": {
       "weighting": "equal weight for every delivery",
       "best_model": "xgboost",
       "test_log_loss": 1.8272248265861515,
-      "mirror_xi_chase_win_rate": 0.49
+      "mirror_xi_chase_win_rate": 0.5833,
+      "weak_xi_chasing_strong_xi_win_rate": 0.0333,
+      "strong_xi_chasing_weak_xi_win_rate": 0.8,
+      "release_checks_passed": true
     }
   },
   "legends_state_probe": {

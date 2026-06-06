@@ -29,6 +29,7 @@ from data_pipeline import (
     OUTCOMES,
     data_fingerprint,
     load_dataset_source,
+    parse_fielders,
     prepare_deliveries,
 )
 from model_wrappers import EncodedOutcomeClassifier, FastPipelineOutcomeModel
@@ -208,6 +209,10 @@ def player_metadata(df: pd.DataFrame, weights: np.ndarray | None = None) -> dict
     global_bowl_rate = float(
         weighted["_weighted_bowl_run"].sum() / max(1, weighted["_weighted_bowl_ball"].sum())
     )
+    global_bowler_wicket_rate = float(
+        weighted["_weighted_bowl_wicket"].sum()
+        / max(1, weighted["_weighted_bowl_ball"].sum())
+    )
 
     bat = (
         weighted.groupby("batter")
@@ -250,7 +255,7 @@ def player_metadata(df: pd.DataFrame, weights: np.ndarray | None = None) -> dict
             float(row.weighted_bowl_runs) + 180 * global_bowl_rate
         ) / (effective_bowl_balls + 180)
         wicket_rate = (
-            float(row.weighted_bowl_wkts) + 180 * global_wicket_rate
+            float(row.weighted_bowl_wkts) + 180 * global_bowler_wicket_rate
         ) / (effective_bowl_balls + 180)
 
         if bowl_balls >= 120 and bat_balls >= 180:
@@ -272,10 +277,76 @@ def player_metadata(df: pd.DataFrame, weights: np.ndarray | None = None) -> dict
             "effective_bat_balls": round(effective_bat_balls, 2),
             "effective_bowl_balls": round(effective_bowl_balls, 2),
         }
+
+    dismissal_aliases = {
+        "caught": "caught",
+        "caught and bowled": "caught_and_bowled",
+        "bowled": "bowled",
+        "lbw": "lbw",
+        "stumped": "stumped",
+        "run out": "run_out",
+        "hit wicket": "hit_wicket",
+    }
+    dismissal_rows = weighted[weighted["_wicket"].eq(1)].copy()
+    dismissal_rows["_dismissal_kind"] = (
+        dismissal_rows["wicket_kind"]
+        .fillna("")
+        .astype(str)
+        .str.lower()
+        .str.replace("&", " and ", regex=False)
+        .str.replace(r"[^a-z0-9]+", " ", regex=True)
+        .str.strip()
+        .map(dismissal_aliases)
+    )
+    dismissal_counts = (
+        dismissal_rows.dropna(subset=["_dismissal_kind"])
+        .groupby("_dismissal_kind")["_profile_weight"]
+        .sum()
+    )
+    if dismissal_counts.empty:
+        dismissal_probabilities = {}
+    else:
+        dismissal_probabilities = {
+            str(kind): float(value / dismissal_counts.sum())
+            for kind, value in dismissal_counts.items()
+        }
+
+    fielding = {}
+    for _, row in dismissal_rows.iterrows():
+        kind = row["_dismissal_kind"]
+        if kind not in {"caught", "stumped", "run_out"}:
+            continue
+        fielders = parse_fielders(row.get("fielders_involved"))
+        if not fielders:
+            continue
+        weight = float(row["_profile_weight"]) / len(fielders)
+        metric = {
+            "caught": "catches",
+            "stumped": "stumpings",
+            "run_out": "run_outs",
+        }[kind]
+        for fielder in fielders:
+            stats = fielding.setdefault(
+                fielder,
+                {"catches": 0.0, "stumpings": 0.0, "run_outs": 0.0},
+            )
+            stats[metric] += weight
+    fielding = {
+        player: {metric: round(value, 4) for metric, value in stats.items()}
+        for player, stats in fielding.items()
+    }
     return {
         "players": players,
         "roles": roles,
         "venues": sorted(df["venue"].dropna().astype(str).unique()),
+        "dismissal_probabilities": dismissal_probabilities,
+        "fielding": fielding,
+        "player_rate_baselines": {
+            "bat_runs_per_ball": global_bat_rate,
+            "dismissal_rate": global_wicket_rate,
+            "bowl_runs_per_ball": global_bowl_rate,
+            "wicket_rate": global_bowler_wicket_rate,
+        },
     }
 
 
@@ -535,8 +606,8 @@ def train_profile(
 
     metadata.update(
         {
-            "version": "5.0",
-            "artifact_schema": 5,
+            "version": "6.0",
+            "artifact_schema": 6,
             "profile": profile,
             "profile_description": (
                 "Recency-weighted modern IPL form with a five-year half-life."
@@ -565,6 +636,12 @@ def train_profile(
             "leakage_safe_pre_delivery_features": True,
             "recency_weight_half_life_years": 5.0 if profile == "modern" else None,
             "equal_weight_lifetime_data": profile == "lifetime",
+            "matchup_adjustment_strength": 1.0,
+            "simulation_calibration": {
+                "target_chase_win_rate": 0.5454,
+                "chase_scoring_multiplier": 0.976,
+                "chase_wicket_multiplier": 1.05,
+            },
         }
     )
     (staging_dir / "metadata.json").write_text(json.dumps(metadata, indent=2), encoding="utf-8")

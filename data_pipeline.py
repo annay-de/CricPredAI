@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import ast
 import hashlib
 import json
 import re
@@ -132,6 +133,30 @@ def canonicalize_team(value: object) -> str:
     if not key:
         return "Unknown"
     return TEAM_ALIASES.get(key, re.sub(r"\s+", " ", str(value)).strip())
+
+
+def parse_fielders(value: object) -> list[str]:
+    if value is None or (not isinstance(value, (list, tuple, set)) and pd.isna(value)):
+        return []
+    parsed = value
+    if isinstance(value, str):
+        text = value.strip()
+        if not text:
+            return []
+        try:
+            parsed = ast.literal_eval(text)
+        except (SyntaxError, ValueError):
+            parsed = [part.strip() for part in text.split(",")]
+    if not isinstance(parsed, (list, tuple, set)):
+        parsed = [parsed]
+    fielders = []
+    for player in parsed:
+        if player is None or pd.isna(player):
+            continue
+        name = str(player).strip()
+        if name and name.lower() not in {"none", "nan", "unknown"}:
+            fielders.append(name)
+    return fielders
 
 
 def canonicalize_venue(value: object, city: object = None) -> str:
@@ -326,6 +351,7 @@ def _standardize_schema(raw: pd.DataFrame) -> pd.DataFrame:
         "extra_type": "",
         "wicket_kind": "",
         "player_out": np.nan,
+        "fielders_involved": np.nan,
         "venue": "Unknown",
         "city": "",
         "toss_decision": "Unknown",
