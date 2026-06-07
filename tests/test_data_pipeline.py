@@ -78,3 +78,43 @@ def test_recency_weights_favor_new_seasons():
     weights = recency_weights(frame, pd.Timestamp("2026-01-01"))
     assert weights[0] < weights[1] < weights[2]
     assert weights[2] == 1.0
+
+
+def test_batting_position_uses_first_appearance_including_non_striker():
+    base = {
+        "match_id": 1,
+        "date": "2026-01-01",
+        "match_type": "T20",
+        "innings": 1,
+        "batting_team": "A",
+        "bowling_team": "B",
+        "over": 0,
+        "bowler": "Bowler",
+        "runs_batter": 0,
+        "runs_total": 0,
+        "runs_extras": 0,
+        "runs_bowler": 0,
+        "valid_ball": 1,
+        "venue": "Eden Gardens",
+    }
+    raw = pd.DataFrame(
+        [
+            {
+                **base,
+                "ball": 1,
+                "batter": "Opening striker",
+                "non_striker": "Opening partner",
+            },
+            {
+                **base,
+                "ball": 2,
+                "batter": "Number three",
+                "non_striker": "Opening partner",
+            },
+        ]
+    )
+
+    prepared = prepare_deliveries(raw)
+
+    assert prepared.iloc[0]["bat_pos"] == 1
+    assert prepared.iloc[1]["bat_pos"] == 3

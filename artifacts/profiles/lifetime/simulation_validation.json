@@ -6,14 +6,14 @@
   "historical_chase_win_rate": 0.5454,
   "mirror_xi": {
     "simulations": 60,
-    "batting_first_wins": 24,
-    "chasing_wins": 35,
+    "batting_first_wins": 29,
+    "chasing_wins": 30,
     "ties": 1,
-    "chase_win_rate": 0.5833
+    "chase_win_rate": 0.5
   },
   "strength_sensitivity": {
     "simulations_per_direction": 30,
-    "weak_xi_chasing_strong_xi_win_rate": 0.0333,
+    "weak_xi_chasing_strong_xi_win_rate": 0.2333,
     "strong_xi_chasing_weak_xi_win_rate": 0.8
   },
   "release_checks": {

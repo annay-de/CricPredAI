@@ -6,15 +6,15 @@
   "historical_chase_win_rate": 0.5454,
   "mirror_xi": {
     "simulations": 60,
-    "batting_first_wins": 27,
-    "chasing_wins": 33,
+    "batting_first_wins": 26,
+    "chasing_wins": 34,
     "ties": 0,
-    "chase_win_rate": 0.55
+    "chase_win_rate": 0.5667
   },
   "strength_sensitivity": {
     "simulations_per_direction": 30,
-    "weak_xi_chasing_strong_xi_win_rate": 0.1,
-    "strong_xi_chasing_weak_xi_win_rate": 0.8667
+    "weak_xi_chasing_strong_xi_win_rate": 0.0333,
+    "strong_xi_chasing_weak_xi_win_rate": 0.9
   },
   "release_checks": {
     "mirror_chase_rate_near_history": true,

@@ -45,6 +45,7 @@ except Exception:
     HAS_XGB = False
 
 ROOT = Path(__file__).resolve().parent
+PREPARED_CACHE_SCHEMA = 2
 DEFAULT_DATA_CANDIDATES = [
     ROOT / "Data" / "ipl_dataset",
     ROOT / "Data" / "IPL.csv",
@@ -89,7 +90,7 @@ def resolve_data_path(explicit: Path | None) -> Path:
 
 def load_prepared(path: Path, cache_dir: Path, use_cache: bool) -> tuple[pd.DataFrame, str]:
     fingerprint = data_fingerprint(path)
-    cache_path = cache_dir / f"prepared_{fingerprint}.pkl"
+    cache_path = cache_dir / f"prepared_v{PREPARED_CACHE_SCHEMA}_{fingerprint}.pkl"
     if use_cache and cache_path.exists():
         print(f"Loading prepared delivery cache: {cache_path}", flush=True)
         return pd.read_pickle(cache_path), fingerprint
@@ -194,7 +195,15 @@ def player_metadata(df: pd.DataFrame, weights: np.ndarray | None = None) -> dict
     weighted["_profile_weight"] = 1.0 if weights is None else np.asarray(weights, dtype=float)
     weighted["_weighted_bat_ball"] = weighted["_ball_faced"] * weighted["_profile_weight"]
     weighted["_weighted_bat_run"] = weighted["runs_batter"] * weighted["_profile_weight"]
-    weighted["_weighted_dismissal"] = weighted["_wicket"] * weighted["_profile_weight"]
+    weighted["_batter_dismissal"] = (
+        weighted["_wicket"].eq(1)
+        & weighted["player_out"].fillna("").astype(str).eq(
+            weighted["batter"].astype(str)
+        )
+    ).astype(int)
+    weighted["_weighted_dismissal"] = (
+        weighted["_batter_dismissal"] * weighted["_profile_weight"]
+    )
     weighted["_weighted_bowl_ball"] = weighted["valid_ball"] * weighted["_profile_weight"]
     weighted["_weighted_bowl_run"] = weighted["runs_bowler"] * weighted["_profile_weight"]
     weighted["_weighted_bowl_wicket"] = weighted["_bowler_wicket"] * weighted["_profile_weight"]
@@ -213,6 +222,39 @@ def player_metadata(df: pd.DataFrame, weights: np.ndarray | None = None) -> dict
         weighted["_weighted_bowl_wicket"].sum()
         / max(1, weighted["_weighted_bowl_ball"].sum())
     )
+    position_baselines = {}
+    for position, group in weighted.groupby("bat_pos", sort=True):
+        effective_balls = float(group["_weighted_bat_ball"].sum())
+        position_baselines[int(position)] = {
+            "run_rate": float(
+                (group["_weighted_bat_run"].sum() + 180 * global_bat_rate)
+                / (effective_balls + 180)
+            ),
+            "dismissal_rate": float(
+                (group["_weighted_dismissal"].sum() + 180 * global_wicket_rate)
+                / (effective_balls + 180)
+            ),
+        }
+
+    phase_baselines = {}
+    total_phase_balls = max(1.0, float(weighted["_weighted_bowl_ball"].sum()))
+    for phase in ["powerplay", "middle", "death"]:
+        group = weighted[weighted["phase"].eq(phase)]
+        effective_balls = float(group["_weighted_bowl_ball"].sum())
+        phase_baselines[phase] = {
+            "run_rate": float(
+                (group["_weighted_bowl_run"].sum() + 240 * global_bowl_rate)
+                / (effective_balls + 240)
+            ),
+            "wicket_rate": float(
+                (
+                    group["_weighted_bowl_wicket"].sum()
+                    + 240 * global_bowler_wicket_rate
+                )
+                / (effective_balls + 240)
+            ),
+            "ball_share": effective_balls / total_phase_balls,
+        }
 
     bat = (
         weighted.groupby("batter")
@@ -239,8 +281,42 @@ def player_metadata(df: pd.DataFrame, weights: np.ndarray | None = None) -> dict
     stats["player"] = stats["batter"].fillna(stats["bowler"])
     stats = stats.fillna(0)
 
+    position_appearances = (
+        weighted[
+            ["match_id", "innings", "batter", "bat_pos", "_profile_weight"]
+        ]
+        .drop_duplicates(["match_id", "innings", "batter"])
+        .groupby(["batter", "bat_pos"], sort=False)
+        .agg(
+            innings=("match_id", "size"),
+            effective_innings=("_profile_weight", "sum"),
+        )
+        .reset_index()
+    )
+    position_performance = (
+        weighted.groupby(["batter", "bat_pos"], sort=False)
+        .agg(
+            balls=("_ball_faced", "sum"),
+            effective_balls=("_weighted_bat_ball", "sum"),
+            weighted_runs=("_weighted_bat_run", "sum"),
+            weighted_dismissals=("_weighted_dismissal", "sum"),
+        )
+        .reset_index()
+    )
+    bowling_phase_performance = (
+        weighted.groupby(["bowler", "phase"], sort=False)
+        .agg(
+            balls=("valid_ball", "sum"),
+            effective_balls=("_weighted_bowl_ball", "sum"),
+            weighted_runs=("_weighted_bowl_run", "sum"),
+            weighted_wickets=("_weighted_bowl_wicket", "sum"),
+        )
+        .reset_index()
+    )
+
     roles = {}
     for row in stats.itertuples(index=False):
+        player = str(row.player)
         bat_balls = float(row.bat_balls)
         bowl_balls = float(row.bowl_balls)
         effective_bat_balls = float(row.weighted_bat_balls)
@@ -264,7 +340,150 @@ def player_metadata(df: pd.DataFrame, weights: np.ndarray | None = None) -> dict
             role = "bowler"
         else:
             role = "batter"
-        roles[str(row.player)] = {
+        player_positions = position_appearances[
+            position_appearances["batter"].eq(player)
+        ]
+        effective_innings = float(player_positions["effective_innings"].sum())
+        if effective_innings > 0:
+            preferred_position = float(
+                (
+                    player_positions["bat_pos"]
+                    * player_positions["effective_innings"]
+                ).sum()
+                / effective_innings
+            )
+            position_variance = float(
+                (
+                    (player_positions["bat_pos"] - preferred_position) ** 2
+                    * player_positions["effective_innings"]
+                ).sum()
+                / effective_innings
+            )
+            position_spread = max(0.85, float(np.sqrt(position_variance)))
+        else:
+            preferred_position = float(row.avg_position or 6.0)
+            position_spread = 2.5
+
+        position_effectiveness = {}
+        player_position_performance = position_performance[
+            position_performance["batter"].eq(player)
+        ]
+        for position_row in player_position_performance.itertuples(index=False):
+            position = int(position_row.bat_pos)
+            effective_position_balls = float(position_row.effective_balls)
+            baseline = position_baselines.get(
+                position,
+                {
+                    "run_rate": global_bat_rate,
+                    "dismissal_rate": global_wicket_rate,
+                },
+            )
+            prior_run_rate = 0.70 * bat_rate + 0.30 * baseline["run_rate"]
+            prior_dismissal_rate = (
+                0.70 * dismissal_rate + 0.30 * baseline["dismissal_rate"]
+            )
+            posterior_run_rate = float(
+                (float(position_row.weighted_runs) + 120 * prior_run_rate)
+                / (effective_position_balls + 120)
+            )
+            posterior_dismissal_rate = float(
+                (
+                    float(position_row.weighted_dismissals)
+                    + 120 * prior_dismissal_rate
+                )
+                / (effective_position_balls + 120)
+            )
+            position_effectiveness[str(position)] = {
+                "balls": int(position_row.balls),
+                "effective_balls": round(effective_position_balls, 2),
+                "run_multiplier": round(
+                    float(np.clip(posterior_run_rate / max(0.1, bat_rate), 0.88, 1.12)),
+                    5,
+                ),
+                "wicket_multiplier": round(
+                    float(
+                        np.clip(
+                            posterior_dismissal_rate
+                            / max(0.005, dismissal_rate),
+                            0.85,
+                            1.18,
+                        )
+                    ),
+                    5,
+                ),
+            }
+
+        position_counts = {
+            str(int(position_row.bat_pos)): {
+                "innings": int(position_row.innings),
+                "effective_innings": round(
+                    float(position_row.effective_innings),
+                    2,
+                ),
+            }
+            for position_row in player_positions.itertuples(index=False)
+        }
+
+        player_phase_performance = bowling_phase_performance[
+            bowling_phase_performance["bowler"].eq(player)
+        ].set_index("phase")
+        bowling_phases = {}
+        for phase in ["powerplay", "middle", "death"]:
+            if phase in player_phase_performance.index:
+                phase_row = player_phase_performance.loc[phase]
+                phase_balls = int(phase_row["balls"])
+                effective_phase_balls = float(phase_row["effective_balls"])
+                weighted_phase_runs = float(phase_row["weighted_runs"])
+                weighted_phase_wickets = float(phase_row["weighted_wickets"])
+            else:
+                phase_balls = 0
+                effective_phase_balls = 0.0
+                weighted_phase_runs = 0.0
+                weighted_phase_wickets = 0.0
+            baseline = phase_baselines[phase]
+            prior_run_rate = 0.65 * bowl_rate + 0.35 * baseline["run_rate"]
+            prior_wicket_rate = (
+                0.65 * wicket_rate + 0.35 * baseline["wicket_rate"]
+            )
+            posterior_run_rate = float(
+                (weighted_phase_runs + 120 * prior_run_rate)
+                / (effective_phase_balls + 120)
+            )
+            posterior_wicket_rate = float(
+                (weighted_phase_wickets + 120 * prior_wicket_rate)
+                / (effective_phase_balls + 120)
+            )
+            expected_share = max(0.02, float(baseline["ball_share"]))
+            posterior_usage_share = float(
+                (effective_phase_balls + 36 * expected_share)
+                / (max(0.0, effective_bowl_balls) + 36)
+            )
+            usage_ratio = max(0.20, posterior_usage_share / expected_share)
+            selection_score = float(
+                1.30
+                * np.log(
+                    max(0.25, baseline["run_rate"] / max(0.1, posterior_run_rate))
+                )
+                + 0.80
+                * np.log(
+                    max(
+                        0.25,
+                        posterior_wicket_rate
+                        / max(0.005, baseline["wicket_rate"]),
+                    )
+                )
+                + 0.28 * np.log(usage_ratio)
+            )
+            bowling_phases[phase] = {
+                "balls": phase_balls,
+                "effective_balls": round(effective_phase_balls, 2),
+                "runs_per_ball": round(posterior_run_rate, 5),
+                "wicket_rate": round(posterior_wicket_rate, 5),
+                "usage_share": round(posterior_usage_share, 5),
+                "selection_score": round(selection_score, 5),
+            }
+
+        roles[player] = {
             "role": role,
             "batting_score": float(bat_rate - 2.2 * dismissal_rate + 0.025 * np.log1p(bat_balls)),
             "bowling_score": float(-bowl_rate + 5.0 * wicket_rate + 0.02 * np.log1p(bowl_balls)),
@@ -276,6 +495,15 @@ def player_metadata(df: pd.DataFrame, weights: np.ndarray | None = None) -> dict
             "bowl_balls": int(bowl_balls),
             "effective_bat_balls": round(effective_bat_balls, 2),
             "effective_bowl_balls": round(effective_bowl_balls, 2),
+            "batting_position": {
+                "preferred": round(preferred_position, 3),
+                "spread": round(position_spread, 3),
+                "innings": int(player_positions["innings"].sum()),
+                "effective_innings": round(effective_innings, 2),
+                "positions": position_counts,
+                "effectiveness": position_effectiveness,
+            },
+            "bowling_phases": bowling_phases,
         }
 
     dismissal_aliases = {
@@ -346,6 +574,20 @@ def player_metadata(df: pd.DataFrame, weights: np.ndarray | None = None) -> dict
             "dismissal_rate": global_wicket_rate,
             "bowl_runs_per_ball": global_bowl_rate,
             "wicket_rate": global_bowler_wicket_rate,
+        },
+        "batting_position_baselines": {
+            str(position): {
+                metric: round(value, 6)
+                for metric, value in values.items()
+            }
+            for position, values in position_baselines.items()
+        },
+        "bowling_phase_baselines": {
+            phase: {
+                metric: round(value, 6)
+                for metric, value in values.items()
+            }
+            for phase, values in phase_baselines.items()
         },
     }
 
@@ -606,8 +848,8 @@ def train_profile(
 
     metadata.update(
         {
-            "version": "6.0",
-            "artifact_schema": 6,
+            "version": "7.0",
+            "artifact_schema": 7,
             "profile": profile,
             "profile_description": (
                 "Recency-weighted modern IPL form with a five-year half-life."
@@ -637,6 +879,8 @@ def train_profile(
             "recency_weight_half_life_years": 5.0 if profile == "modern" else None,
             "equal_weight_lifetime_data": profile == "lifetime",
             "matchup_adjustment_strength": 1.0,
+            "batting_position_adjustment_strength": 1.0,
+            "bowling_phase_selection_strength": 1.0,
             "simulation_calibration": {
                 "target_chase_win_rate": 0.5454,
                 "chase_scoring_multiplier": 0.976,

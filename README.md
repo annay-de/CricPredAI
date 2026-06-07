@@ -47,6 +47,11 @@ The resource-allocation problem: a franchise has a squad of ~20 players and must
 - Five-year recency half-life so current IPL scoring patterns matter more than early-era matches
 - Canonical venue and franchise names shared by training and simulation
 - Data-derived batter-versus-bowler calibration so lineup quality remains decisive in either innings
+- Ordered batting XIs are followed exactly instead of being rearranged after wickets
+- Bayesian-smoothed batting-position records reward players used near their historical roles
+- Users nominate at least five bowling options; no unselected player can bowl
+- Bayesian-smoothed powerplay, middle-over, and death-over records drive over allocation
+- Look-ahead workload planning preserves overs for proven death specialists
 - Mirrored release checks against the historical IPL chase rate and strong-versus-weak XIs
 - Dataset-derived dismissal types and fielder attribution instead of assigning every catch to the bowler
 - Full-data XGBoost and logistic models instead of tiny random row samples

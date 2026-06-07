@@ -39,4 +39,6 @@ step. The app and simulator load only `artifacts/metadata.json`,
 
 The loader accepts future updates of the same normalized dataset layout. New
 seasons, players, teams, and venue spellings are handled without changing the
-model code.
+model code. Retraining derives batting positions from first appearance in each
+innings and rebuilds phase-specific bowling records, so future seasons do not
+require hand-maintained player-role files.

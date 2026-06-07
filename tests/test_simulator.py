@@ -4,12 +4,16 @@ import numpy as np
 import pandas as pd
 
 from simulator import (
+    apply_batting_position,
     apply_player_matchup,
     apply_simulation_calibration,
     available_profiles,
+    choose_bowler,
+    choose_next_batter,
     load_artifacts,
     outcome_to_runs,
     representative_seed,
+    resolve_bowling_options,
     sample_dismissal,
     vector_input,
 )
@@ -198,3 +202,154 @@ def test_representative_scorecard_seed_comes_from_modal_outcome():
     )
 
     assert representative_seed(distribution) == 1001
+
+
+def test_submitted_batting_order_is_followed_exactly():
+    order = ["Opener", "Anchor", "Finisher", "Bowler"]
+
+    assert choose_next_batter(order, ["Opener"], {}, "powerplay", 1) == "Anchor"
+    assert (
+        choose_next_batter(
+            order,
+            ["Opener", "Anchor"],
+            {"roles": {"Finisher": {"batting_score": -10}}},
+            "death",
+            2,
+        )
+        == "Finisher"
+    )
+
+
+def test_batter_is_more_effective_near_learned_position():
+    base = {
+        "0": 0.30,
+        "1": 0.36,
+        "2": 0.06,
+        "3": 0.01,
+        "4": 0.12,
+        "6": 0.06,
+        "W": 0.05,
+        "WD": 0.02,
+        "NB": 0.005,
+        "LB": 0.01,
+        "B": 0.005,
+    }
+    meta = {
+        "batting_position_adjustment_strength": 1.0,
+        "roles": {
+            "Anchor": {
+                "batting_position": {
+                    "preferred": 3.0,
+                    "spread": 1.0,
+                    "effective_innings": 80.0,
+                    "effectiveness": {
+                        "3": {
+                            "run_multiplier": 1.05,
+                            "wicket_multiplier": 0.95,
+                        }
+                    },
+                }
+            }
+        },
+    }
+
+    proper = apply_batting_position(base, "Anchor", 3, meta)
+    misplaced = apply_batting_position(base, "Anchor", 9, meta)
+    proper_runs = sum(proper[str(run)] * run for run in [1, 2, 3, 4, 6])
+    misplaced_runs = sum(misplaced[str(run)] * run for run in [1, 2, 3, 4, 6])
+
+    assert proper_runs > misplaced_runs
+    assert proper["W"] < misplaced["W"]
+
+
+def test_bowling_selection_uses_learned_phase_role():
+    meta = {
+        "bowling_phase_selection_strength": 1.0,
+        "roles": {
+            "New-ball specialist": {
+                "role": "bowler",
+                "bowling_score": 0.0,
+                "effective_bowl_balls": 600,
+                "bowling_phases": {
+                    "powerplay": {"selection_score": 1.2, "balls": 360},
+                    "death": {"selection_score": -0.8, "balls": 30},
+                },
+            },
+            "Death specialist": {
+                "role": "bowler",
+                "bowling_score": 0.0,
+                "effective_bowl_balls": 600,
+                "bowling_phases": {
+                    "powerplay": {"selection_score": -0.8, "balls": 30},
+                    "death": {"selection_score": 1.2, "balls": 360},
+                },
+            },
+        },
+    }
+    bowlers = ["New-ball specialist", "Death specialist"]
+
+    powerplay, _ = choose_bowler(bowlers, meta, 0, {}, None)
+    death, _ = choose_bowler(bowlers, meta, 18, {}, None)
+
+    assert powerplay == "New-ball specialist"
+    assert death == "Death specialist"
+
+
+def test_allocator_reserves_capacity_for_a_death_specialist():
+    meta = {
+        "bowling_phase_selection_strength": 1.0,
+        "roles": {
+            "Death specialist": {
+                "role": "bowler",
+                "effective_bowl_balls": 500,
+                "bowling_phases": {
+                    "middle": {
+                        "selection_score": 0.9,
+                        "usage_share": 0.30,
+                    },
+                    "death": {
+                        "selection_score": 1.2,
+                        "usage_share": 0.60,
+                    },
+                },
+            },
+            "Middle specialist": {
+                "role": "bowler",
+                "effective_bowl_balls": 500,
+                "bowling_phases": {
+                    "middle": {
+                        "selection_score": 0.6,
+                        "usage_share": 0.80,
+                    },
+                    "death": {
+                        "selection_score": -0.5,
+                        "usage_share": 0.05,
+                    },
+                },
+            },
+        },
+    }
+
+    chosen, _ = choose_bowler(
+        ["Death specialist", "Middle specialist"],
+        meta,
+        over=12,
+        bowler_overs={"Death specialist": 1, "Middle specialist": 0},
+        prev_bowler=None,
+    )
+
+    assert chosen == "Middle specialist"
+
+
+def test_explicit_bowling_options_are_honored_and_require_five():
+    xi = [f"Player {index}" for index in range(1, 12)]
+    selected = xi[3:8]
+
+    assert resolve_bowling_options(xi, selected, {}) == selected
+
+    try:
+        resolve_bowling_options(xi, xi[:4], {})
+    except ValueError as exc:
+        assert "At least five" in str(exc)
+    else:
+        raise AssertionError("Four explicit bowling options should be rejected.")

@@ -71,6 +71,11 @@ def load_artifacts(profile: str = "modern"):
             "Legacy v3 artifacts detected. Retrain with train_models.py to use "
             "leakage-safe state, chase context, and learned calibration."
         )
+    elif int(meta.get("artifact_schema", 0)) < 7:
+        warnings.append(
+            "These artifacts predate learned batting-position and bowling-phase "
+            "roles. Retrain with train_models.py for role-aware simulations."
+        )
     if load_errors:
         warnings.append(f"Could not load model artifacts: {sorted(load_errors)}")
     meta.setdefault("profile", profile)
@@ -226,16 +231,7 @@ def model_probs(
 
 def choose_next_batter(available: List[str], used: List[str], meta: dict, phase: str, wickets: int) -> Optional[str]:
     remaining = [p for p in available if p not in used]
-    if not remaining: return None
-    roles = meta.get("roles", {})
-    def score(p):
-        r = roles.get(p,{})
-        base = float(r.get("batting_score",0.0))
-        role = r.get("role", "batter")
-        if wickets >= 6 and role == "bowler": base -= 0.6
-        if phase == "death" and role == "all-rounder": base += 0.15
-        return base
-    return sorted(remaining, key=score, reverse=True)[0]
+    return remaining[0] if remaining else None
 
 
 def choose_bowler(bowlers: List[str], meta: dict, over: int, bowler_overs: Dict[str,int], prev_bowler: Optional[str]) -> Tuple[str,str]:
@@ -244,17 +240,131 @@ def choose_bowler(bowlers: List[str], meta: dict, over: int, bowler_overs: Dict[
     candidates = [b for b in bowlers if bowler_overs.get(b,0) < 4 and b != prev_bowler]
     if not candidates:
         candidates = [b for b in bowlers if bowler_overs.get(b,0) < 4] or bowlers
+    phase_order = ["powerplay", "middle", "death"]
+    current_phase_index = phase_order.index(phase)
+
+    def future_reserve(bowler: str) -> int:
+        if phase == "death":
+            return 0
+        phase_records = roles.get(bowler, {}).get("bowling_phases", {})
+        future_phases = phase_order[current_phase_index + 1 :]
+        future_share = sum(
+            max(
+                0.0,
+                float(phase_records.get(future_phase, {}).get("usage_share", 0.0)),
+            )
+            for future_phase in future_phases
+        )
+        current_score = float(
+            phase_records.get(phase, {}).get("selection_score", 0.0)
+        )
+        best_future_score = max(
+            (
+                float(
+                    phase_records.get(future_phase, {}).get(
+                        "selection_score",
+                        0.0,
+                    )
+                )
+                for future_phase in future_phases
+            ),
+            default=current_score,
+        )
+        raw_reserve = 4.0 * future_share
+        reserve = (
+            int(np.ceil(raw_reserve))
+            if best_future_score > current_score + 0.08
+            else int(np.rint(raw_reserve))
+        )
+        return int(np.clip(reserve, 0, 3))
+
+    schedule_safe = [
+        bowler
+        for bowler in candidates
+        if bowler_overs.get(bowler, 0) < 4 - future_reserve(bowler)
+    ]
+    if schedule_safe:
+        candidates = schedule_safe
+    total_usage = sum(
+        np.sqrt(max(0.0, float(roles.get(b, {}).get("effective_bowl_balls", 0.0))) + 60.0)
+        for b in bowlers
+    )
+    phase_strength = max(
+        0.0,
+        float(meta.get("bowling_phase_selection_strength", 1.0)),
+    )
+
     def score(b):
         r = roles.get(b,{})
-        base = float(r.get("bowling_score",0.0))
+        phase_record = r.get("bowling_phases", {}).get(phase, {})
+        base = phase_strength * float(phase_record.get("selection_score", 0.0))
         balls = float(r.get("bowl_balls",0))
-        if r.get("role") in ["bowler","all-rounder"]: base += 0.4
-        if phase == "death": base += 0.10*np.log1p(balls)
-        if phase == "powerplay": base += 0.05*np.log1p(balls)
+        base += 0.10 * float(r.get("bowling_score", 0.0))
+        if r.get("role") in ["bowler","all-rounder"]:
+            base += 0.16
+        usage_weight = np.sqrt(
+            max(0.0, float(r.get("effective_bowl_balls", balls))) + 60.0
+        )
+        expected_overs = min(
+            4.0,
+            20.0 * usage_weight / max(1.0, total_usage),
+        )
+        base -= 0.18 * max(
+            0.0,
+            bowler_overs.get(b, 0) + 1 - expected_overs,
+        )
         return base
-    chosen = sorted(candidates, key=score, reverse=True)[0]
-    reason = f"selected for {phase} based on role, historical bowling usage, phase fit, and four-over limit"
+    chosen = max(candidates, key=score)
+    phase_record = roles.get(chosen, {}).get("bowling_phases", {}).get(phase, {})
+    sample = int(phase_record.get("balls", 0))
+    reason = (
+        f"selected for {phase} from the user-approved bowling options using "
+        f"Bayesian-smoothed phase record ({sample} historical balls), workload, "
+        "and the four-over limit"
+    )
     return chosen, reason
+
+
+def resolve_bowling_options(
+    bowling_xi: List[str],
+    selected_bowlers: Optional[List[str]],
+    meta: dict,
+) -> List[str]:
+    xi = list(dict.fromkeys(bowling_xi))
+    if selected_bowlers is not None:
+        selected = [
+            player
+            for player in dict.fromkeys(selected_bowlers)
+            if player in xi
+        ]
+        if len(selected) < 5:
+            raise ValueError("At least five selected bowlers must belong to the playing XI.")
+        return selected
+
+    roles = meta.get("roles", {})
+    ranked = sorted(
+        xi,
+        key=lambda player: (
+            roles.get(player, {}).get("role") in {"bowler", "all-rounder"},
+            float(roles.get(player, {}).get("effective_bowl_balls", 0.0)),
+            float(roles.get(player, {}).get("bowling_score", 0.0)),
+        ),
+        reverse=True,
+    )
+    primary = [
+        player
+        for player in ranked
+        if roles.get(player, {}).get("role") in {"bowler", "all-rounder"}
+        and float(roles.get(player, {}).get("bowl_balls", 0.0)) >= 30
+    ]
+    target_count = min(7, max(5, len(primary)))
+    selected = primary[:target_count]
+    for player in ranked:
+        if player not in selected:
+            selected.append(player)
+        if len(selected) >= target_count:
+            break
+    return selected
 
 
 def rotate_strike(striker, non_striker):
@@ -462,6 +572,61 @@ def apply_player_matchup(
     return normalise(adjusted)
 
 
+def apply_batting_position(
+    probabilities: Dict[str, float],
+    batter: str,
+    batting_position: int,
+    meta: dict,
+) -> Dict[str, float]:
+    position_record = (
+        meta.get("roles", {})
+        .get(batter, {})
+        .get("batting_position", {})
+    )
+    if not position_record:
+        return dict(probabilities)
+
+    preferred = float(position_record.get("preferred", batting_position))
+    spread = max(0.85, float(position_record.get("spread", 2.5)))
+    effective_innings = max(
+        0.0,
+        float(position_record.get("effective_innings", 0.0)),
+    )
+    confidence = effective_innings / (effective_innings + 12.0)
+    distance = abs(float(batting_position) - preferred)
+    familiarity = float(np.exp(-0.5 * (distance / spread) ** 2))
+    effectiveness = position_record.get("effectiveness", {}).get(
+        str(int(batting_position)),
+        {},
+    )
+    learned_run_multiplier = float(effectiveness.get("run_multiplier", 1.0))
+    learned_wicket_multiplier = float(
+        effectiveness.get("wicket_multiplier", 1.0)
+    )
+    strength = max(
+        0.0,
+        float(meta.get("batting_position_adjustment_strength", 1.0)),
+    )
+    run_multiplier = (
+        learned_run_multiplier
+        * (1.0 - 0.12 * confidence * (1.0 - familiarity))
+    ) ** strength
+    wicket_multiplier = (
+        learned_wicket_multiplier
+        * (1.0 + 0.15 * confidence * (1.0 - familiarity))
+    ) ** strength
+
+    adjusted = dict(probabilities)
+    adjusted["0"] *= run_multiplier ** -0.55
+    adjusted["1"] *= run_multiplier ** 0.30
+    adjusted["2"] *= run_multiplier ** 0.70
+    adjusted["3"] *= run_multiplier ** 0.70
+    adjusted["4"] *= run_multiplier ** 1.05
+    adjusted["6"] *= run_multiplier ** 1.25
+    adjusted["W"] *= wicket_multiplier
+    return normalise(adjusted)
+
+
 def apply_simulation_calibration(
     probabilities: Dict[str, float],
     innings: int,
@@ -487,14 +652,16 @@ def apply_simulation_calibration(
 
 def simulate_innings(team_name: str, opponent: str, batting_xi: List[str], bowling_xi: List[str], models:dict, meta:dict, model_name:str,
                      venue="Unknown", pitch="balanced", weather="clear", toss_decision="bat", innings=1, target:Optional[int]=None,
-                     seed:Optional[int]=None, commentary=False, probability_cache: Optional[dict] = None) -> dict:
+                     seed:Optional[int]=None, commentary=False, probability_cache: Optional[dict] = None,
+                     selected_bowlers: Optional[List[str]] = None) -> dict:
     rng = np.random.default_rng(seed)
     priors = models.get("baseline_prior", {})
     batters = batting_xi[:]
-    # eligible bowlers: historical bowlers/all-rounders first, fallback to last 6 players
-    roles = meta.get("roles",{})
-    bowlers = [p for p in bowling_xi if roles.get(p,{}).get("role") in ["bowler","all-rounder"] and roles.get(p,{}).get("bowl_balls",0) >= 30]
-    if len(bowlers) < 5: bowlers = (bowlers + bowling_xi[-7:])[:7]
+    bowlers = resolve_bowling_options(bowling_xi, selected_bowlers, meta)
+    batting_positions = {
+        player: position
+        for position, player in enumerate(batters, start=1)
+    }
 
     striker, non_striker = batters[0], batters[1]
     used_batters = [striker, non_striker]
@@ -567,6 +734,12 @@ def simulate_innings(team_name: str, opponent: str, batting_xi: List[str], bowli
             p,
             delivery_batter,
             current_bowler,
+            meta,
+        )
+        p = apply_batting_position(
+            p,
+            delivery_batter,
+            batting_positions.get(delivery_batter, 11),
             meta,
         )
         p = apply_simulation_calibration(p, innings, meta)
@@ -655,21 +828,23 @@ def simulate_innings(team_name: str, opponent: str, batting_xi: List[str], bowli
     rules = {"no_bowler_over_4": all(v["O_balls"]<=24 for v in bowl.values()), "legal_balls_max_120": sum(v["O_balls"] for v in bowl.values())<=120, "wickets_max_10": state["wickets"]<=10}
     return {"team":team_name,"runs":state["runs"],"wickets":state["wickets"],"overs":overs_str(sum(v["O_balls"] for v in bowl.values())),"end_reason":end_reason,
             "batting_card":pd.DataFrame(batting_card),"bowling_card":pd.DataFrame(bowling_card),"fall_of_wickets":pd.DataFrame(fow),
-            "ball_by_ball":pd.DataFrame(rows),"over_summary":pd.DataFrame(over_summary),"rules":rules}
+            "ball_by_ball":pd.DataFrame(rows),"over_summary":pd.DataFrame(over_summary),"rules":rules,
+            "bowling_options": bowlers}
 
 
-def simulate_match(team1, team2, xi1, xi2, models, meta, model_name, venue, pitch, weather, toss_winner, toss_decision, seed=None, commentary=False, probability_cache=None):
+def simulate_match(team1, team2, xi1, xi2, models, meta, model_name, venue, pitch, weather, toss_winner, toss_decision, seed=None, commentary=False, probability_cache=None,
+                   bowlers1: Optional[List[str]] = None, bowlers2: Optional[List[str]] = None):
     # toss decides batting order
     if toss_decision == "bat":
         bat_first = toss_winner
     else:
         bat_first = team2 if toss_winner == team1 else team1
     if bat_first == team1:
-        first = simulate_innings(team1, team2, xi1, xi2, models, meta, model_name, venue,pitch,weather,toss_decision,1,None,seed,commentary,probability_cache)
-        second = simulate_innings(team2, team1, xi2, xi1, models, meta, model_name, venue,pitch,weather,toss_decision,2,first["runs"]+1,None if seed is None else seed+1,commentary,probability_cache)
+        first = simulate_innings(team1, team2, xi1, xi2, models, meta, model_name, venue,pitch,weather,toss_decision,1,None,seed,commentary,probability_cache,bowlers2)
+        second = simulate_innings(team2, team1, xi2, xi1, models, meta, model_name, venue,pitch,weather,toss_decision,2,first["runs"]+1,None if seed is None else seed+1,commentary,probability_cache,bowlers1)
     else:
-        first = simulate_innings(team2, team1, xi2, xi1, models, meta, model_name, venue,pitch,weather,toss_decision,1,None,seed,commentary,probability_cache)
-        second = simulate_innings(team1, team2, xi1, xi2, models, meta, model_name, venue,pitch,weather,toss_decision,2,first["runs"]+1,None if seed is None else seed+1,commentary,probability_cache)
+        first = simulate_innings(team2, team1, xi2, xi1, models, meta, model_name, venue,pitch,weather,toss_decision,1,None,seed,commentary,probability_cache,bowlers1)
+        second = simulate_innings(team1, team2, xi1, xi2, models, meta, model_name, venue,pitch,weather,toss_decision,2,first["runs"]+1,None if seed is None else seed+1,commentary,probability_cache,bowlers2)
     if second["runs"] >= first["runs"]+1:
         winner = second["team"]; margin = f"by {10-second['wickets']} wickets"
     elif first["runs"] > second["runs"]:

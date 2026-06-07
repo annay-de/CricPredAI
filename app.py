@@ -475,20 +475,93 @@ def model_choices(meta: dict, models: dict) -> list[str]:
     return choices
 
 
-def lineup_summary(xi: list[str], meta: dict) -> str:
+def ordered_lineup_editor(
+    label: str,
+    players: list[str],
+    defaults: list[str],
+    key: str,
+) -> list[str]:
+    default_players = (defaults + [""] * 11)[:11]
+    lineup = st.data_editor(
+        pd.DataFrame(
+            {
+                "Batting position": list(range(1, 12)),
+                "Player": default_players,
+            }
+        ),
+        key=key,
+        width="stretch",
+        height=425,
+        hide_index=True,
+        num_rows="fixed",
+        disabled=["Batting position"],
+        column_config={
+            "Batting position": st.column_config.NumberColumn(
+                width="small",
+                format="%d",
+            ),
+            "Player": st.column_config.SelectboxColumn(
+                label,
+                options=players,
+                required=True,
+                width="large",
+            ),
+        },
+    )
+    return [
+        str(player).strip()
+        for player in lineup["Player"].tolist()
+        if pd.notna(player) and str(player).strip()
+    ]
+
+
+def recommended_bowlers(xi: list[str], meta: dict) -> list[str]:
+    roles = meta.get("roles", {})
+    ranked = sorted(
+        dict.fromkeys(xi),
+        key=lambda player: (
+            roles.get(player, {}).get("role") in {"bowler", "all-rounder"},
+            float(roles.get(player, {}).get("effective_bowl_balls", 0.0)),
+            float(roles.get(player, {}).get("bowling_score", 0.0)),
+        ),
+        reverse=True,
+    )
+    primary = [
+        player
+        for player in ranked
+        if roles.get(player, {}).get("role") in {"bowler", "all-rounder"}
+    ]
+    selected = primary[:6]
+    for player in ranked:
+        if player not in selected:
+            selected.append(player)
+        if len(selected) >= min(6, len(xi)):
+            break
+    return selected
+
+
+def lineup_summary(
+    xi: list[str],
+    meta: dict,
+    bowling_options: list[str] | None = None,
+) -> str:
     roles = meta.get("roles", {})
     counts = {"batter": 0, "all-rounder": 0, "bowler": 0}
     for player in xi:
         role = roles.get(player, {}).get("role", "batter")
         counts[role] = counts.get(role, 0) + 1
-    bowling_options = sum(
-        roles.get(player, {}).get("role") in {"bowler", "all-rounder"}
-        for player in xi
+    bowling_count = (
+        len(bowling_options)
+        if bowling_options is not None
+        else sum(
+            roles.get(player, {}).get("role") in {"bowler", "all-rounder"}
+            for player in xi
+        )
     )
     return (
         f"{len(xi)}/11 selected | {counts['batter']} batters | "
         f"{counts['all-rounder']} all-rounders | {counts['bowler']} bowlers | "
-        f"{bowling_options} primary bowling options"
+        f"{bowling_count} selected bowling options"
     )
 
 
@@ -512,6 +585,45 @@ def score_box(innings: dict) -> str:
         <div class="score-detail">{escape(innings["overs"])} overs | {escape(innings["end_reason"])}</div>
     </div>
     """
+
+
+def bowling_phase_summary(innings: dict) -> pd.DataFrame:
+    deliveries = innings.get("ball_by_ball", pd.DataFrame()).copy()
+    if deliveries.empty:
+        return pd.DataFrame()
+    deliveries["legal_delivery"] = ~deliveries["outcome"].isin(["WD", "NB"])
+    first_use = (
+        deliveries.reset_index()
+        .groupby("bowler", sort=False)["index"]
+        .min()
+        .to_dict()
+    )
+    grouped = (
+        deliveries.groupby(["bowler", "phase"], sort=False)["legal_delivery"]
+        .sum()
+        .unstack(fill_value=0)
+    )
+    for phase in ["powerplay", "middle", "death"]:
+        if phase not in grouped:
+            grouped[phase] = 0
+    grouped = grouped[["powerplay", "middle", "death"]].reset_index()
+    grouped["_first_use"] = grouped["bowler"].map(first_use)
+    grouped = grouped.sort_values("_first_use").drop(columns="_first_use")
+
+    def overs(balls: int) -> str:
+        balls = int(balls)
+        return f"{balls // 6}.{balls % 6}"
+
+    for phase in ["powerplay", "middle", "death"]:
+        grouped[phase] = grouped[phase].map(overs)
+    return grouped.rename(
+        columns={
+            "bowler": "Bowler",
+            "powerplay": "Powerplay overs",
+            "middle": "Middle overs",
+            "death": "Death overs",
+        }
+    )
 
 
 def score_progression_figure(result: dict) -> go.Figure:
@@ -741,7 +853,10 @@ def render_match_lab() -> None:
             disabled=True,
         )
 
-    section_header("Playing XIs", "Selection order is the batting order")
+    section_header(
+        "Playing XIs",
+        "Set all 11 batting positions, then nominate at least five bowling options",
+    )
     names = st.columns(2)
     with names[0]:
         default_name_a = "Mumbai 2026" if profile == "modern" else "Legends XI"
@@ -752,27 +867,51 @@ def render_match_lab() -> None:
 
     lineups = st.columns(2)
     with lineups[0]:
-        xi_a = st.multiselect(
-            f"{team_a or 'Team A'} XI",
+        st.markdown(f"#### {escape(team_a or 'Team A')} batting order")
+        xi_a = ordered_lineup_editor(
+            "Player",
             players,
-            default=default_xi_a,
-            max_selections=11,
-            key=f"xi_a_{profile}",
-        )
-        st.markdown(
-            f'<div class="lineup-meta">{escape(lineup_summary(xi_a, meta))}</div>',
-            unsafe_allow_html=True,
+            default_xi_a,
+            key=f"xi_a_order_{profile}",
         )
     with lineups[1]:
-        xi_b = st.multiselect(
-            f"{team_b or 'Team B'} XI",
+        st.markdown(f"#### {escape(team_b or 'Team B')} batting order")
+        xi_b = ordered_lineup_editor(
+            "Player",
             players,
-            default=default_xi_b,
-            max_selections=11,
-            key=f"xi_b_{profile}",
+            default_xi_b,
+            key=f"xi_b_order_{profile}",
+        )
+
+    bowling_columns = st.columns(2)
+    with bowling_columns[0]:
+        bowling_a = st.multiselect(
+            f"{team_a or 'Team A'} bowling options",
+            list(dict.fromkeys(xi_a)),
+            default=recommended_bowlers(xi_a, meta),
+            key=f"bowling_a_{profile}",
+            help=(
+                "Select at least five. Historical powerplay, middle-over, and "
+                "death-over records determine when these players are used."
+            ),
         )
         st.markdown(
-            f'<div class="lineup-meta">{escape(lineup_summary(xi_b, meta))}</div>',
+            f'<div class="lineup-meta">{escape(lineup_summary(xi_a, meta, bowling_a))}</div>',
+            unsafe_allow_html=True,
+        )
+    with bowling_columns[1]:
+        bowling_b = st.multiselect(
+            f"{team_b or 'Team B'} bowling options",
+            list(dict.fromkeys(xi_b)),
+            default=recommended_bowlers(xi_b, meta),
+            key=f"bowling_b_{profile}",
+            help=(
+                "Only nominated players can bowl. The simulator respects the "
+                "four-over limit and does not use the same bowler in consecutive overs."
+            ),
+        )
+        st.markdown(
+            f'<div class="lineup-meta">{escape(lineup_summary(xi_b, meta, bowling_b))}</div>',
             unsafe_allow_html=True,
         )
 
@@ -815,9 +954,13 @@ def render_match_lab() -> None:
     overlap = sorted(set(xi_a) & set(xi_b))
     problems = []
     if len(xi_a) != 11 or len(xi_b) != 11:
-        problems.append("Select exactly 11 players for each team.")
+        problems.append("Fill all 11 batting positions for each team.")
+    if len(set(xi_a)) != len(xi_a) or len(set(xi_b)) != len(xi_b):
+        problems.append("A player can appear only once in a batting order.")
     if overlap:
         problems.append(f"A player cannot represent both teams: {', '.join(overlap)}.")
+    if len(bowling_a) < 5 or len(bowling_b) < 5:
+        problems.append("Nominate at least five bowling options for each team.")
     if not team_a or not team_b or team_a == team_b:
         problems.append("Use two distinct team names.")
     if problems:
@@ -848,6 +991,8 @@ def render_match_lab() -> None:
                 toss_winner,
                 toss_decision,
                 seed=int(seed) + 1000,
+                bowlers1=bowling_a,
+                bowlers2=bowling_b,
             )
             scorecard_seed = representative_seed(distribution)
             result = simulate_match(
@@ -865,6 +1010,8 @@ def render_match_lab() -> None:
                 toss_decision,
                 seed=scorecard_seed,
                 commentary=False,
+                bowlers1=bowling_a,
+                bowlers2=bowling_b,
             )
         st.session_state["latest_run"] = {
             "result": result,
@@ -878,6 +1025,8 @@ def render_match_lab() -> None:
                 "scorecard_seed": scorecard_seed,
                 "toss_winner": toss_winner,
                 "toss_decision": toss_decision,
+                "bowling_a": bowling_a,
+                "bowling_b": bowling_b,
             },
         }
         st.session_state["pending_nav"] = "Results"
@@ -995,11 +1144,26 @@ def render_results() -> None:
                 hide_index=True,
             )
             st.markdown("#### Bowling")
+            if innings.get("bowling_options"):
+                st.caption(
+                    "Eligible options: "
+                    + ", ".join(map(str, innings["bowling_options"]))
+                )
             st.dataframe(
                 innings["bowling_card"],
                 width="stretch",
                 hide_index=True,
             )
+            phase_summary = bowling_phase_summary(innings)
+            if not phase_summary.empty:
+                st.caption(
+                    "Phase deployment from the user-nominated bowling options"
+                )
+                st.dataframe(
+                    phase_summary,
+                    width="stretch",
+                    hide_index=True,
+                )
             if not innings["fall_of_wickets"].empty:
                 st.markdown("#### Fall of wickets")
                 st.dataframe(
@@ -1185,8 +1349,12 @@ def render_model_notes() -> None:
     section_header("Inputs that change the simulation", "Only supported controls are exposed")
     supported = [
         (
-            "Playing XI",
-            "Player histories calibrate batter-bowler matchups, batting order, fielding attribution, and bowling selection.",
+            "Batting order",
+            "The submitted order is followed exactly. Bayesian-smoothed historical position performance adjusts each batter conservatively.",
+        ),
+        (
+            "Bowling options",
+            "Only user-nominated bowlers are eligible. Historical powerplay, middle-over, and death-over records guide over allocation.",
         ),
         (
             "Evidence profile",

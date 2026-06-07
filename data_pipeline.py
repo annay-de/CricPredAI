@@ -407,6 +407,14 @@ def prepare_deliveries(raw: pd.DataFrame) -> pd.DataFrame:
     ]
     for col in ["batter", "bowler", "toss_decision"]:
         df[col] = df[col].fillna("Unknown").astype(str).str.strip().replace("", "Unknown")
+    if "non_striker" in df:
+        df["non_striker"] = (
+            df["non_striker"]
+            .fillna("Unknown")
+            .astype(str)
+            .str.strip()
+            .replace("", "Unknown")
+        )
 
     df["outcome"] = df.apply(outcome_from_row, axis=1)
     wicket_kind = df["wicket_kind"].map(_key)
@@ -426,6 +434,47 @@ def prepare_deliveries(raw: pd.DataFrame) -> pd.DataFrame:
     else:
         ball_faced = (~df["extra_type"].map(_key).str.contains("wide")).astype(int)
     df["_ball_faced"] = ball_faced.astype(int)
+
+    appearance_columns = ["match_id", "innings", "_row_order"]
+    batter_appearances = df[appearance_columns + ["batter"]].rename(
+        columns={"batter": "appearance_player"}
+    )
+    batter_appearances["_appearance_slot"] = 0
+    if "non_striker" in df:
+        non_striker_appearances = df[
+            appearance_columns + ["non_striker"]
+        ].rename(columns={"non_striker": "appearance_player"})
+        non_striker_appearances["_appearance_slot"] = 1
+        appearances = pd.concat(
+            [batter_appearances, non_striker_appearances],
+            ignore_index=True,
+        )
+    else:
+        appearances = batter_appearances
+    appearances = appearances[
+        appearances["appearance_player"].notna()
+        & appearances["appearance_player"].ne("Unknown")
+    ].sort_values(
+        ["match_id", "innings", "_row_order", "_appearance_slot"],
+        kind="stable",
+    )
+    appearances = appearances.drop_duplicates(
+        ["match_id", "innings", "appearance_player"],
+        keep="first",
+    )
+    appearances["bat_pos"] = (
+        appearances.groupby(["match_id", "innings"], sort=False).cumcount() + 1
+    )
+    df = df.merge(
+        appearances[
+            ["match_id", "innings", "appearance_player", "bat_pos"]
+        ],
+        left_on=["match_id", "innings", "batter"],
+        right_on=["match_id", "innings", "appearance_player"],
+        how="left",
+        validate="many_to_one",
+    ).drop(columns=["appearance_player"])
+    df["bat_pos"] = df["bat_pos"].fillna(11).clip(1, 11).astype(int)
 
     innings_group = [df["match_id"], df["innings"]]
     batter_group = [df["match_id"], df["innings"], df["batter"]]
