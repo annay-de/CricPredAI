@@ -723,12 +723,14 @@ def lineup_summary(
     )
 
 
-def section_header(title: str, note: str) -> None:
+def section_header(title: str, note: str = "") -> None:
+    note_html = f'<div class="section-note">{escape(note)}</div>' if note else ""
+
     st.markdown(
         f"""
         <div class="section-head">
             <h2>{escape(title)}</h2>
-            <div class="section-note">{escape(note)}</div>
+            {note_html}
         </div>
         """,
         unsafe_allow_html=True,
