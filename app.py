@@ -23,15 +23,15 @@ st.set_page_config(
 )
 
 COLORS = {
-    "ink": "#101D2F",
-    "muted": "#667386",
-    "paper": "#F4F1E8",
-    "panel": "#FBF9F3",
-    "line": "#D8D2C4",
-    "blue": "#174A7E",
-    "navy": "#0F2742",
-    "copper": "#B45F3D",
-    "gold": "#B88A2A",
+    "ink": "#102033",
+    "muted": "#63738A",
+    "paper": "#F6F9FF",
+    "panel": "rgba(255,255,255,0.78)",
+    "line": "#D9E3F1",
+    "blue": "#0B5FA5",
+    "navy": "#07192D",
+    "copper": "#CC745D",
+    "gold": "#B5892E",
 }
 
 st.markdown(
@@ -46,23 +46,42 @@ st.markdown(
         --blue: {COLORS["blue"]};
         --navy: {COLORS["navy"]};
         --copper: {COLORS["copper"]};
+        --cyan: #6ED7FF;
+        --violet: #A79BFF;
+        --glass: rgba(255,255,255,0.70);
+        --glass-strong: rgba(255,255,255,0.88);
+        --shadow: 0 24px 70px rgba(8, 29, 55, 0.18);
+        --font: Inter, "SF Pro Display", "SF Pro Text", "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
     }}
+    * {{ font-family: var(--font) !important; }}
     .stApp {{
-        background: var(--paper);
+        background:
+            radial-gradient(circle at 12% 8%, rgba(110, 215, 255, 0.42), transparent 30rem),
+            radial-gradient(circle at 92% 0%, rgba(82, 115, 255, 0.22), transparent 31rem),
+            radial-gradient(circle at 80% 72%, rgba(26, 97, 168, 0.16), transparent 27rem),
+            linear-gradient(135deg, #F8FBFF 0%, #EDF5FF 48%, #F7FAFF 100%);
         color: var(--ink);
     }}
-    header[data-testid="stHeader"],
-    [data-testid="stToolbar"] {{
-        display: none;
+    .stApp::before {{
+        content: "";
+        position: fixed;
+        inset: 0;
+        pointer-events: none;
+        background-image:
+            linear-gradient(rgba(255,255,255,0.36) 1px, transparent 1px),
+            linear-gradient(90deg, rgba(255,255,255,0.36) 1px, transparent 1px);
+        background-size: 42px 42px;
+        mask-image: linear-gradient(to bottom, rgba(0,0,0,0.35), transparent 75%);
     }}
+    header[data-testid="stHeader"], [data-testid="stToolbar"] {{ display: none; }}
     [data-testid="stMainBlockContainer"] {{
         max-width: 1260px;
-        padding-top: 1.2rem;
+        padding-top: 1.4rem;
         padding-bottom: 4rem;
     }}
-    h1, h2, h3 {{
+    h1, h2, h3, h4 {{
         color: var(--ink);
-        letter-spacing: -0.025em;
+        letter-spacing: -0.04em;
     }}
     h1 {{
         font-size: clamp(2.2rem, 5vw, 4.6rem);
@@ -73,65 +92,109 @@ st.markdown(
         align-items: center;
         justify-content: space-between;
         gap: 1.5rem;
-        border-bottom: 1px solid var(--line);
-        padding: 0.35rem 0 1rem;
-        margin-bottom: 0.8rem;
+        border: 1px solid rgba(255,255,255,0.74);
+        background: rgba(255,255,255,0.64);
+        backdrop-filter: blur(24px) saturate(170%);
+        -webkit-backdrop-filter: blur(24px) saturate(170%);
+        box-shadow: 0 12px 38px rgba(30, 67, 111, 0.10);
+        border-radius: 26px;
+        padding: 0.72rem 0.88rem;
+        margin-bottom: 1rem;
     }}
-    .brand {{
-        display: flex;
-        align-items: center;
-        gap: 0.75rem;
-    }}
+    .brand {{ display: flex; align-items: center; gap: 0.75rem; }}
     .brand-mark {{
-        width: 2.35rem;
-        height: 2.35rem;
-        display: grid;
-        place-items: center;
-        background: var(--ink);
-        color: var(--paper);
-        font: 700 0.78rem/1 system-ui, sans-serif;
-        letter-spacing: 0.08em;
+        width: 2.5rem;
+        height: 2.5rem;
+        position: relative;
+        display: block;
+        border-radius: 16px;
+        background: linear-gradient(135deg, var(--navy), var(--blue) 58%, var(--cyan));
+        box-shadow: 0 12px 26px rgba(11, 95, 165, 0.26);
+        overflow: hidden;
+    }}
+    .brand-mark span {{
+        position: absolute;
+        display: block;
+        border-radius: 999px;
+        background: rgba(255,255,255,0.86);
+        transform: rotate(-35deg);
+    }}
+    .brand-mark span:nth-child(1) {{
+        width: 1.15rem;
+        height: 0.22rem;
+        left: 0.62rem;
+        top: 0.72rem;
+    }}
+    .brand-mark span:nth-child(2) {{
+        width: 1.55rem;
+        height: 0.22rem;
+        left: 0.48rem;
+        top: 1.12rem;
+        opacity: 0.72;
+    }}
+    .brand-mark span:nth-child(3) {{
+        width: 0.86rem;
+        height: 0.22rem;
+        left: 0.92rem;
+        top: 1.52rem;
+        opacity: 0.54;
     }}
     .brand-name {{
-        font: 700 1rem/1.1 system-ui, sans-serif;
+        font-weight: 850;
         letter-spacing: 0.08em;
         text-transform: uppercase;
     }}
-    .brand-sub {{
+    .brand-sub, .coverage {{
         color: var(--muted);
         font-size: 0.76rem;
-        margin-top: 0.18rem;
     }}
-    .coverage {{
-        color: var(--muted);
-        font-size: 0.78rem;
-        text-align: right;
-        letter-spacing: 0.02em;
-    }}
+    .coverage {{ text-align: right; letter-spacing: 0.02em; }}
     .hero {{
-        padding: 3.4rem 0 2.7rem;
-        border-bottom: 1px solid var(--line);
-        margin-bottom: 1.7rem;
+        position: relative;
+        overflow: hidden;
+        padding: clamp(2.2rem, 5vw, 4.8rem);
+        border: 1px solid rgba(255,255,255,0.24);
+        border-radius: 36px;
+        margin-bottom: 1.8rem;
+        background:
+            radial-gradient(circle at 88% 18%, rgba(110, 215, 255, 0.55), transparent 21rem),
+            radial-gradient(circle at 24% 8%, rgba(167, 155, 255, 0.36), transparent 19rem),
+            linear-gradient(135deg, #07192D 0%, #0A315D 52%, #0D6FAE 100%);
+        color: white;
+        box-shadow: var(--shadow);
+    }}
+    .hero::after {{
+        content: "";
+        position: absolute;
+        right: -8rem;
+        bottom: -9rem;
+        width: 28rem;
+        height: 28rem;
+        border-radius: 50%;
+        background: rgba(255,255,255,0.12);
     }}
     .eyebrow {{
-        color: var(--blue);
+        position: relative;
+        color: #BFEAFF;
         font-size: 0.72rem;
-        font-weight: 750;
+        font-weight: 850;
         letter-spacing: 0.14em;
         text-transform: uppercase;
         margin-bottom: 0.75rem;
     }}
     .hero h1 {{
+        position: relative;
+        color: white;
         max-width: 900px;
         margin: 0;
-        font-family: Georgia, "Times New Roman", serif;
-        font-weight: 500;
+        font-weight: 850;
     }}
     .hero-copy {{
-        color: var(--muted);
+        position: relative;
+        color: rgba(255,255,255,0.78);
         max-width: 720px;
         margin-top: 1.2rem;
-        font-size: 1.03rem;
+        font-size: 1.04rem;
         line-height: 1.65;
     }}
     .section-head {{
@@ -139,36 +202,52 @@ st.markdown(
         align-items: baseline;
         justify-content: space-between;
         gap: 1rem;
-        border-bottom: 1px solid var(--line);
-        padding-bottom: 0.7rem;
-        margin: 0.5rem 0 1.1rem;
+        border-bottom: 1px solid rgba(16,32,51,0.08);
+        padding: 1.2rem 0 0.8rem;
+        margin: 0.55rem 0 1.1rem;
     }}
     .section-head h2 {{
         margin: 0;
-        font: 600 1.45rem/1.2 Georgia, "Times New Roman", serif;
+        font-size: 1.35rem;
+        line-height: 1.15;
+        font-weight: 850;
     }}
     .section-note {{
         color: var(--muted);
         font-size: 0.8rem;
         text-align: right;
     }}
-    div[data-testid="stVerticalBlockBorderWrapper"] {{
-        background: var(--panel);
-        border-color: var(--line);
-        border-radius: 2px;
+    div[data-testid="stVerticalBlockBorderWrapper"],
+    div[data-testid="stMetric"],
+    .score-box,
+    .model-card {{
+        background: var(--glass-strong);
+        border: 1px solid rgba(255,255,255,0.72);
+        border-radius: 24px;
+        box-shadow: 0 16px 40px rgba(21,54,93,0.10);
+        backdrop-filter: blur(18px) saturate(160%);
+        -webkit-backdrop-filter: blur(18px) saturate(160%);
     }}
-    div[data-testid="stRadio"] > div {{
-        gap: 0.35rem;
+    div[data-testid="stTextInput"] input,
+    div[data-testid="stSelectbox"] div[data-baseweb="select"],
+    div[data-testid="stNumberInput"] input,
+    div[data-testid="stMultiSelect"] div[data-baseweb="select"] {{
+        border-radius: 16px !important;
+        background: rgba(255,255,255,0.74) !important;
+        border-color: rgba(144,169,200,0.42) !important;
     }}
+    div[data-testid="stRadio"] > div {{ gap: 0.35rem; }}
     div[data-testid="stRadio"] label {{
-        border: 1px solid var(--line);
-        background: var(--panel);
-        padding: 0.42rem 0.78rem;
+        border: 1px solid rgba(144,169,200,0.34);
+        background: rgba(255,255,255,0.62);
+        border-radius: 999px;
+        padding: 0.45rem 0.88rem;
         min-height: 2.35rem;
+        box-shadow: 0 8px 22px rgba(18, 54, 92, 0.06);
     }}
     div[data-testid="stRadio"] label:has(input:checked) {{
-        border-color: var(--navy);
-        background: var(--navy);
+        border-color: rgba(11,95,165,0.55);
+        background: linear-gradient(135deg, var(--navy), var(--blue));
         color: white;
     }}
     div[data-testid="stRadio"] label:has(input:checked) p,
@@ -177,27 +256,23 @@ st.markdown(
     }}
     div[data-testid="stButton"] button,
     div[data-testid="stDownloadButton"] button {{
-        border-radius: 2px;
+        border-radius: 999px;
         min-height: 2.75rem;
-        font-weight: 700;
+        font-weight: 850;
         letter-spacing: 0.02em;
+        box-shadow: 0 12px 30px rgba(11, 95, 165, 0.16);
     }}
     div[data-testid="stButton"] button[kind="primary"] {{
-        background: var(--blue);
-        border-color: var(--blue);
-    }}
-    div[data-testid="stMetric"] {{
-        background: var(--panel);
-        border: 1px solid var(--line);
-        padding: 0.9rem 1rem;
-    }}
-    div[data-testid="stMetricLabel"] {{
-        color: var(--muted);
+        background: linear-gradient(135deg, var(--navy), var(--blue));
+        border-color: rgba(255,255,255,0.24);
     }}
     .profile-note {{
-        border-left: 3px solid var(--blue);
-        padding: 0.15rem 0 0.15rem 0.85rem;
-        color: var(--muted);
+        border: 1px solid rgba(255,255,255,0.72);
+        border-left: 5px solid var(--blue);
+        border-radius: 18px;
+        background: rgba(255,255,255,0.64);
+        padding: 0.82rem 1rem;
+        color: #4C5F78;
         font-size: 0.85rem;
         line-height: 1.5;
         margin: 0.15rem 0 1rem;
@@ -209,11 +284,16 @@ st.markdown(
         margin-bottom: 0.7rem;
     }}
     .result-banner {{
-        border-top: 5px solid #4F86BB;
-        background: var(--navy);
+        border: 1px solid rgba(255,255,255,0.22);
+        border-top: 6px solid #74D6FF;
+        border-radius: 30px;
+        background:
+            radial-gradient(circle at 92% 10%, rgba(110,215,255,0.50), transparent 18rem),
+            linear-gradient(135deg, var(--navy), #0B4F89);
         color: white;
-        padding: 1.65rem 1.8rem;
+        padding: 1.8rem 2rem;
         margin-bottom: 1rem;
+        box-shadow: var(--shadow);
     }}
     .result-kicker {{
         color: #B9D3EC;
@@ -222,71 +302,53 @@ st.markdown(
         text-transform: uppercase;
     }}
     .result-title {{
-        font: 500 clamp(1.9rem, 4vw, 3.4rem)/1.1 Georgia, "Times New Roman", serif;
+        font-size: clamp(1.9rem, 4vw, 3.4rem);
+        line-height: 1.05;
+        font-weight: 850;
         margin-top: 0.35rem;
     }}
-    .score-box {{
-        background: var(--panel);
-        border: 1px solid var(--line);
-        padding: 1.15rem 1.2rem;
-        min-height: 8.2rem;
-    }}
+    .score-box {{ padding: 1.15rem 1.2rem; min-height: 8.2rem; }}
     .score-team {{
         color: var(--muted);
         font-size: 0.76rem;
-        font-weight: 700;
+        font-weight: 850;
         letter-spacing: 0.08em;
         text-transform: uppercase;
     }}
     .score-value {{
         color: var(--ink);
-        font: 500 2.45rem/1.1 Georgia, "Times New Roman", serif;
+        font-size: 2.45rem;
+        line-height: 1.1;
+        font-weight: 850;
         margin-top: 0.35rem;
     }}
-    .score-detail {{
-        color: var(--muted);
-        font-size: 0.8rem;
-        margin-top: 0.25rem;
-    }}
+    .score-detail {{ color: var(--muted); font-size: 0.8rem; margin-top: 0.25rem; }}
     .innings-heading {{
         display: flex;
         align-items: baseline;
         justify-content: space-between;
         gap: 1rem;
-        border-top: 4px solid var(--navy);
-        border-bottom: 1px solid var(--line);
-        padding: 0.85rem 0 0.7rem;
-        margin: 0.35rem 0 0.9rem;
+        border: 1px solid rgba(255,255,255,0.72);
+        border-left: 5px solid var(--blue);
+        border-radius: 20px;
+        background: rgba(255,255,255,0.68);
+        padding: 0.85rem 1rem;
+        margin: 0.45rem 0 0.9rem;
     }}
-    .innings-heading h3 {{
-        margin: 0;
-        font: 600 1.35rem/1.2 Georgia, "Times New Roman", serif;
-    }}
-    .innings-score {{
-        color: var(--blue);
-        font-weight: 750;
-        white-space: nowrap;
-    }}
+    .innings-heading h3 {{ margin: 0; font-size: 1.25rem; font-weight: 850; }}
+    .innings-score {{ color: var(--blue); font-weight: 850; white-space: nowrap; }}
     .innings-divider {{
         height: 1px;
-        background: var(--line);
+        background: rgba(16,32,51,0.08);
         margin: 1.8rem 0;
     }}
     .model-card {{
-        background: var(--panel);
-        border-top: 4px solid var(--navy);
+        border-top: 5px solid var(--blue);
         padding: 1.2rem;
         min-height: 13rem;
     }}
-    .model-card h3 {{
-        font: 600 1.25rem/1.2 Georgia, "Times New Roman", serif;
-        margin: 0.25rem 0 0.65rem;
-    }}
-    .model-card p {{
-        color: var(--muted);
-        line-height: 1.55;
-        font-size: 0.88rem;
-    }}
+    .model-card h3 {{ font-size: 1.18rem; font-weight: 850; margin: 0.25rem 0 0.65rem; }}
+    .model-card p {{ color: var(--muted); line-height: 1.55; font-size: 0.88rem; }}
     .fact-grid {{
         display: grid;
         grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -294,30 +356,19 @@ st.markdown(
         margin-top: 0.8rem;
         font-size: 0.82rem;
     }}
-    .fact-grid span:nth-child(odd) {{
-        color: var(--muted);
-    }}
-    .fact-grid span:nth-child(even) {{
-        text-align: right;
-        font-weight: 700;
-    }}
+    .fact-grid span:nth-child(odd) {{ color: var(--muted); }}
+    .fact-grid span:nth-child(even) {{ text-align: right; font-weight: 850; }}
     .support-row {{
         display: grid;
         grid-template-columns: 11rem 1fr;
         gap: 1rem;
         padding: 0.85rem 0;
-        border-bottom: 1px solid var(--line);
+        border-bottom: 1px solid rgba(16,32,51,0.08);
     }}
-    .support-row strong {{
-        font-size: 0.84rem;
-    }}
-    .support-row span {{
-        color: var(--muted);
-        font-size: 0.84rem;
-        line-height: 1.5;
-    }}
+    .support-row strong {{ font-size: 0.84rem; }}
+    .support-row span {{ color: var(--muted); font-size: 0.84rem; line-height: 1.5; }}
     .footer {{
-        border-top: 1px solid var(--line);
+        border-top: 1px solid rgba(16,32,51,0.08);
         margin-top: 3rem;
         padding-top: 1.15rem;
         display: flex;
@@ -326,32 +377,55 @@ st.markdown(
         color: var(--muted);
         font-size: 0.78rem;
     }}
-    .footer a {{
-        color: var(--ink);
-        text-decoration: none;
-        border-bottom: 1px solid var(--line);
+    .footer a {{ color: var(--ink); text-decoration: none; border-bottom: 1px solid var(--line); }}
+    .glass-table-wrap {{
+        width: 100%;
+        max-height: 520px;
+        overflow: auto;
+        border: 1px solid rgba(255,255,255,0.72);
+        border-radius: 22px;
+        background: rgba(255,255,255,0.72);
+        box-shadow: 0 16px 40px rgba(21,54,93,0.09);
+        backdrop-filter: blur(18px) saturate(160%);
+        -webkit-backdrop-filter: blur(18px) saturate(160%);
+        margin: 0.35rem 0 1rem;
     }}
-    [data-testid="stDataFrame"] {{
-        border: 1px solid var(--line);
+    table.glass-table {{ width: 100%; border-collapse: collapse; font-size: 0.84rem; }}
+    table.glass-table th {{
+        position: sticky;
+        top: 0;
+        z-index: 1;
+        background: rgba(245,249,255,0.96);
+        color: #41536B;
+        text-align: left;
+        text-transform: uppercase;
+        letter-spacing: 0.07em;
+        font-size: 0.68rem;
+        padding: 0.72rem 0.82rem;
+        border-bottom: 1px solid rgba(16,32,51,0.08);
+        white-space: nowrap;
+    }}
+    table.glass-table td {{
+        padding: 0.68rem 0.82rem;
+        border-bottom: 1px solid rgba(16,32,51,0.06);
+        color: var(--ink);
+        white-space: nowrap;
+    }}
+    table.glass-table tr:nth-child(even) td {{ background: rgba(255,255,255,0.42); }}
+    [data-testid="stDataFrame"], [data-testid="stDataEditor"] {{
+        border-radius: 22px;
+        overflow: hidden;
+        border: 1px solid rgba(255,255,255,0.72);
+        box-shadow: 0 16px 40px rgba(21,54,93,0.09);
     }}
     @media (max-width: 760px) {{
         .coverage {{ display: none; }}
-        .hero {{ padding-top: 2rem; }}
+        .hero {{ padding: 2rem; }}
         .section-head {{ display: block; }}
-        .section-note {{
-            margin-top: 0.35rem;
-            text-align: left;
-        }}
-        div[data-testid="stRadio"] > div {{
-            flex-wrap: nowrap;
-            gap: 0.25rem;
-        }}
-        div[data-testid="stRadio"] label {{
-            padding: 0.35rem 0.5rem;
-        }}
-        div[data-testid="stRadio"] label p {{
-            font-size: 0.8rem;
-        }}
+        .section-note {{ margin-top: 0.35rem; text-align: left; }}
+        div[data-testid="stRadio"] > div {{ flex-wrap: nowrap; gap: 0.25rem; }}
+        div[data-testid="stRadio"] label {{ padding: 0.35rem 0.5rem; }}
+        div[data-testid="stRadio"] label p {{ font-size: 0.8rem; }}
         .support-row {{ grid-template-columns: 1fr; gap: 0.25rem; }}
         .footer {{ display: block; }}
     }}
@@ -446,6 +520,24 @@ def cached_artifacts(profile: str):
     return load_artifacts(profile)
 
 
+def render_static_table(frame: pd.DataFrame) -> None:
+    if frame.empty:
+        st.caption("No rows to display.")
+        return
+    safe = frame.copy()
+    st.markdown(
+        '<div class="glass-table-wrap">'
+        + safe.to_html(
+            index=False,
+            escape=True,
+            classes="glass-table",
+            border=0,
+        )
+        + "</div>",
+        unsafe_allow_html=True,
+    )
+
+
 def valid_preset(candidates: list[str], players: list[str]) -> list[str]:
     result = [player for player in candidates if player in players]
     return result if len(result) == 11 else []
@@ -485,7 +577,7 @@ def ordered_lineup_editor(
     lineup = st.data_editor(
         pd.DataFrame(
             {
-                "Batting position": list(range(1, 12)),
+                "Batting position": [str(position) for position in range(1, 12)],
                 "Player": default_players,
             }
         ),
@@ -496,9 +588,8 @@ def ordered_lineup_editor(
         num_rows="fixed",
         disabled=["Batting position"],
         column_config={
-            "Batting position": st.column_config.NumberColumn(
+            "Batting position": st.column_config.TextColumn(
                 width="small",
-                format="%d",
             ),
             "Player": st.column_config.SelectboxColumn(
                 label,
@@ -538,6 +629,73 @@ def recommended_bowlers(xi: list[str], meta: dict) -> list[str]:
         if len(selected) >= min(6, len(xi)):
             break
     return selected
+
+
+def saved_team_store(profile: str) -> dict:
+    root = st.session_state.setdefault("saved_teams", {})
+    return root.setdefault(profile, {})
+
+
+def lineup_default(profile: str, side: str, fallback: list[str]) -> list[str]:
+    return st.session_state.get(f"lineup_default_{side}_{profile}", fallback)
+
+
+def team_name_default(profile: str, side: str, fallback: str) -> str:
+    return st.session_state.get(f"team_name_default_{side}_{profile}", fallback)
+
+
+def team_name_key(profile: str, side: str) -> str:
+    version = st.session_state.get(f"team_name_version_{side}_{profile}", 0)
+    return f"team_{side}_{profile}_{version}"
+
+
+def bowling_default(
+    profile: str,
+    side: str,
+    xi: list[str],
+    fallback: list[str],
+) -> list[str]:
+    saved = st.session_state.get(f"bowling_default_{side}_{profile}", fallback)
+    filtered = [player for player in saved if player in xi]
+    return filtered if filtered else fallback
+
+
+def editor_key(profile: str, side: str) -> str:
+    version = st.session_state.get(f"lineup_version_{side}_{profile}", 0)
+    return f"xi_{side}_order_{profile}_{version}"
+
+
+def bowler_key(profile: str, side: str) -> str:
+    version = st.session_state.get(f"bowling_version_{side}_{profile}", 0)
+    return f"bowling_{side}_{profile}_{version}"
+
+
+def load_saved_team(profile: str, side: str, team_name: str) -> None:
+    team = saved_team_store(profile).get(team_name)
+    if not team:
+        return
+    st.session_state[f"team_name_default_{side}_{profile}"] = team_name
+    st.session_state[f"lineup_default_{side}_{profile}"] = team["xi"]
+    st.session_state[f"bowling_default_{side}_{profile}"] = team["bowlers"]
+    st.session_state[f"team_name_version_{side}_{profile}"] = (
+        st.session_state.get(f"team_name_version_{side}_{profile}", 0) + 1
+    )
+    st.session_state[f"lineup_version_{side}_{profile}"] = (
+        st.session_state.get(f"lineup_version_{side}_{profile}", 0) + 1
+    )
+    st.session_state[f"bowling_version_{side}_{profile}"] = (
+        st.session_state.get(f"bowling_version_{side}_{profile}", 0) + 1
+    )
+    st.rerun()
+
+
+def save_team(profile: str, team_name: str, xi: list[str], bowlers: list[str]) -> None:
+    if not team_name or len(xi) != 11:
+        return
+    saved_team_store(profile)[team_name] = {
+        "xi": list(xi),
+        "bowlers": [player for player in bowlers if player in xi],
+    }
 
 
 def lineup_summary(
@@ -668,7 +826,7 @@ def score_progression_figure(result: dict) -> go.Figure:
         margin={"l": 10, "r": 10, "t": 20, "b": 10},
         paper_bgcolor="rgba(0,0,0,0)",
         plot_bgcolor=COLORS["panel"],
-        font={"color": COLORS["ink"], "family": "Arial, sans-serif"},
+        font={"color": COLORS["ink"], "family": "Segoe UI, Inter, sans-serif"},
         legend={"orientation": "h", "y": 1.08, "x": 0},
         xaxis={
             "title": "Overs",
@@ -736,7 +894,7 @@ def probability_figure(distribution: pd.DataFrame, result: dict) -> go.Figure:
         margin={"l": 10, "r": 10, "t": 20, "b": 10},
         paper_bgcolor="rgba(0,0,0,0)",
         plot_bgcolor=COLORS["panel"],
-        font={"color": COLORS["ink"], "family": "Arial, sans-serif"},
+        font={"color": COLORS["ink"], "family": "Segoe UI, Inter, sans-serif"},
         legend={"orientation": "h", "y": 1.08, "x": 0},
         xaxis={
             "title": f"{result['first']['team']} runs (batting first)",
@@ -779,7 +937,9 @@ def render_header() -> None:
         """
         <div class="site-head">
             <div class="brand">
-                <div class="brand-mark">🏏</div>
+                <div class="brand-mark" aria-hidden="true">
+                    <span></span><span></span><span></span>
+                </div>
                 <div>
                     <div class="brand-name">CricPred</div>
                     <div class="brand-sub">IPL ML Simulator</div>
@@ -853,6 +1013,46 @@ def render_match_lab() -> None:
             disabled=True,
         )
 
+    saved_teams = saved_team_store(profile)
+    with st.expander("Temporary team drawer", expanded=bool(saved_teams)):
+        st.caption(
+            "Saved teams live only in this browser session. Use them to reload "
+            "a batting order and bowling pool without searching player by player."
+        )
+        saved_message = st.session_state.pop(f"saved_team_message_{profile}", None)
+        if saved_message:
+            st.success(saved_message)
+        saved_options = [""] + sorted(saved_teams)
+        load_cols = st.columns([1, 0.55, 1, 0.55])
+        with load_cols[0]:
+            load_a = st.selectbox(
+                "Load into Team A",
+                saved_options,
+                key=f"load_a_{profile}",
+            )
+        with load_cols[1]:
+            if st.button(
+                "Load A",
+                disabled=not load_a,
+                key=f"load_a_button_{profile}",
+                width="stretch",
+            ):
+                load_saved_team(profile, "a", load_a)
+        with load_cols[2]:
+            load_b = st.selectbox(
+                "Load into Team B",
+                saved_options,
+                key=f"load_b_{profile}",
+            )
+        with load_cols[3]:
+            if st.button(
+                "Load B",
+                disabled=not load_b,
+                key=f"load_b_button_{profile}",
+                width="stretch",
+            ):
+                load_saved_team(profile, "b", load_b)
+
     section_header(
         "Playing XIs",
         "Set all 11 batting positions, then nominate at least five bowling options",
@@ -860,36 +1060,47 @@ def render_match_lab() -> None:
     names = st.columns(2)
     with names[0]:
         default_name_a = "Mumbai 2026" if profile == "modern" else "Legends XI"
-        team_a = st.text_input("Team A", default_name_a, key=f"team_a_{profile}").strip()
+        team_a = st.text_input(
+            "Team A",
+            team_name_default(profile, "a", default_name_a),
+            key=team_name_key(profile, "a"),
+        ).strip()
     with names[1]:
         default_name_b = "Gujarat 2026" if profile == "modern" else "All-time XI"
-        team_b = st.text_input("Team B", default_name_b, key=f"team_b_{profile}").strip()
+        team_b = st.text_input(
+            "Team B",
+            team_name_default(profile, "b", default_name_b),
+            key=team_name_key(profile, "b"),
+        ).strip()
 
     lineups = st.columns(2)
     with lineups[0]:
         st.markdown(f"#### {escape(team_a or 'Team A')} batting order")
+        default_xi_a = lineup_default(profile, "a", default_xi_a)
         xi_a = ordered_lineup_editor(
             "Player",
             players,
             default_xi_a,
-            key=f"xi_a_order_{profile}",
+            key=editor_key(profile, "a"),
         )
     with lineups[1]:
         st.markdown(f"#### {escape(team_b or 'Team B')} batting order")
+        default_xi_b = lineup_default(profile, "b", default_xi_b)
         xi_b = ordered_lineup_editor(
             "Player",
             players,
             default_xi_b,
-            key=f"xi_b_order_{profile}",
+            key=editor_key(profile, "b"),
         )
 
     bowling_columns = st.columns(2)
     with bowling_columns[0]:
+        recommended_a = recommended_bowlers(xi_a, meta)
         bowling_a = st.multiselect(
             f"{team_a or 'Team A'} bowling options",
             list(dict.fromkeys(xi_a)),
-            default=recommended_bowlers(xi_a, meta),
-            key=f"bowling_a_{profile}",
+            default=bowling_default(profile, "a", xi_a, recommended_a),
+            key=bowler_key(profile, "a"),
             help=(
                 "Select at least five. Historical powerplay, middle-over, and "
                 "death-over records determine when these players are used."
@@ -900,11 +1111,12 @@ def render_match_lab() -> None:
             unsafe_allow_html=True,
         )
     with bowling_columns[1]:
+        recommended_b = recommended_bowlers(xi_b, meta)
         bowling_b = st.multiselect(
             f"{team_b or 'Team B'} bowling options",
             list(dict.fromkeys(xi_b)),
-            default=recommended_bowlers(xi_b, meta),
-            key=f"bowling_b_{profile}",
+            default=bowling_default(profile, "b", xi_b, recommended_b),
+            key=bowler_key(profile, "b"),
             help=(
                 "Only nominated players can bowl. The simulator respects the "
                 "four-over limit and does not use the same bowler in consecutive overs."
@@ -914,6 +1126,34 @@ def render_match_lab() -> None:
             f'<div class="lineup-meta">{escape(lineup_summary(xi_b, meta, bowling_b))}</div>',
             unsafe_allow_html=True,
         )
+
+    save_cols = st.columns(2)
+    team_a_can_save = len(xi_a) == 11 and len(set(xi_a)) == 11 and len(bowling_a) >= 5
+    team_b_can_save = len(xi_b) == 11 and len(set(xi_b)) == 11 and len(bowling_b) >= 5
+    with save_cols[0]:
+        if st.button(
+            f"Save {team_a or 'Team A'} temporarily",
+            disabled=not team_a_can_save,
+            key=f"save_a_{profile}",
+            width="stretch",
+        ):
+            save_team(profile, team_a or "Team A", xi_a, bowling_a)
+            st.session_state[f"saved_team_message_{profile}"] = (
+                f"Saved {team_a or 'Team A'} for this session."
+            )
+            st.rerun()
+    with save_cols[1]:
+        if st.button(
+            f"Save {team_b or 'Team B'} temporarily",
+            disabled=not team_b_can_save,
+            key=f"save_b_{profile}",
+            width="stretch",
+        ):
+            save_team(profile, team_b or "Team B", xi_b, bowling_b)
+            st.session_state[f"saved_team_message_{profile}"] = (
+                f"Saved {team_b or 'Team B'} for this session."
+            )
+            st.rerun()
 
     section_header("Match order", "Toss data determines who bats first")
     match_controls = st.columns([1, 1, 1])
@@ -1138,39 +1378,23 @@ def render_results() -> None:
                 unsafe_allow_html=True,
             )
             st.markdown("#### Batting")
-            st.dataframe(
-                innings["batting_card"],
-                width="stretch",
-                hide_index=True,
-            )
+            render_static_table(innings["batting_card"])
             st.markdown("#### Bowling")
             if innings.get("bowling_options"):
                 st.caption(
                     "Eligible options: "
                     + ", ".join(map(str, innings["bowling_options"]))
                 )
-            st.dataframe(
-                innings["bowling_card"],
-                width="stretch",
-                hide_index=True,
-            )
+            render_static_table(innings["bowling_card"])
             phase_summary = bowling_phase_summary(innings)
             if not phase_summary.empty:
                 st.caption(
                     "Phase deployment from the user-nominated bowling options"
                 )
-                st.dataframe(
-                    phase_summary,
-                    width="stretch",
-                    hide_index=True,
-                )
+                render_static_table(phase_summary)
             if not innings["fall_of_wickets"].empty:
                 st.markdown("#### Fall of wickets")
-                st.dataframe(
-                    innings["fall_of_wickets"],
-                    width="stretch",
-                    hide_index=True,
-                )
+                render_static_table(innings["fall_of_wickets"])
             if index == 0:
                 st.markdown('<div class="innings-divider"></div>', unsafe_allow_html=True)
 
@@ -1202,19 +1426,11 @@ def render_results() -> None:
             )(wilson_interval(int(count), len(distribution)))
             for count in probability_table["Simulations"]
         ]
-        st.dataframe(
-            probability_table,
-            width="stretch",
-            hide_index=True,
-            column_config={
-                "Probability": st.column_config.ProgressColumn(
-                    "Probability",
-                    format="%.1%%",
-                    min_value=0,
-                    max_value=1,
-                )
-            },
+        probability_display = probability_table.copy()
+        probability_display["Probability"] = probability_display["Probability"].map(
+            lambda value: f"{100 * value:.1f}%"
         )
+        render_static_table(probability_display)
         if len(distribution) < 50:
             st.warning(
                 f"Only {len(distribution)} repeated matches were run. Treat these "
@@ -1262,11 +1478,7 @@ def render_results() -> None:
             "p_boundary",
             "p_extra",
         ]
-        st.dataframe(
-            innings["ball_by_ball"][log_columns],
-            width="stretch",
-            hide_index=True,
-        )
+        render_static_table(innings["ball_by_ball"][log_columns])
         csv_bytes = innings["ball_by_ball"].to_csv(index=False).encode("utf-8")
         st.download_button(
             "Download delivery log",
@@ -1326,25 +1538,26 @@ def render_model_notes() -> None:
         )
         reports.append(frame)
     combined_report = pd.concat(reports, ignore_index=True)
-    st.dataframe(
-        combined_report.rename(
-            columns={
-                "model": "Model",
-                "log_loss": "Log loss",
-                "accuracy": "Accuracy",
-                "balanced_accuracy": "Balanced accuracy",
-                "macro_f1": "Macro F1",
-            }
-        ),
-        width="stretch",
-        hide_index=True,
-        column_config={
-            "Log loss": st.column_config.NumberColumn(format="%.4f"),
-            "Accuracy": st.column_config.NumberColumn(format="%.3f"),
-            "Balanced accuracy": st.column_config.NumberColumn(format="%.3f"),
-            "Macro F1": st.column_config.NumberColumn(format="%.3f"),
-        },
+    report_display = combined_report.rename(
+        columns={
+            "model": "Model",
+            "log_loss": "Log loss",
+            "accuracy": "Accuracy",
+            "balanced_accuracy": "Balanced accuracy",
+            "macro_f1": "Macro F1",
+        }
     )
+    for column, places in {
+        "Log loss": 4,
+        "Accuracy": 3,
+        "Balanced accuracy": 3,
+        "Macro F1": 3,
+    }.items():
+        if column in report_display:
+            report_display[column] = report_display[column].map(
+                lambda value, places=places: f"{float(value):.{places}f}"
+            )
+    render_static_table(report_display)
 
     section_header("Inputs that change the simulation", "Only supported controls are exposed")
     supported = [
