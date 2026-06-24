@@ -217,7 +217,6 @@ st.markdown(
         font-size: 0.8rem;
         text-align: right;
     }}
-    div[data-testid="stVerticalBlockBorderWrapper"],
     div[data-testid="stMetric"],
     .score-box,
     .model-card {{
