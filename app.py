@@ -53,7 +53,40 @@ st.markdown(
         --shadow: 0 24px 70px rgba(8, 29, 55, 0.18);
         --font: Inter, "SF Pro Display", "SF Pro Text", "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
     }}
-    * {{ font-family: var(--font) !important; }}
+    .stApp,
+    .stApp button,
+    .stApp input,
+    .stApp textarea,
+    .stApp select {{
+        font-family: var(--font);
+    }}
+    [data-testid="stIconMaterial"],
+    .material-symbols-rounded {{
+        font-family: "Material Symbols Rounded" !important;
+        font-style: normal !important;
+        font-weight: normal !important;
+        line-height: 1 !important;
+        letter-spacing: normal !important;
+        text-transform: none !important;
+        white-space: nowrap !important;
+        word-wrap: normal !important;
+        -webkit-font-feature-settings: "liga" !important;
+        font-feature-settings: "liga" !important;
+        -webkit-font-smoothing: antialiased;
+    }}
+    .material-symbols-outlined {{
+        font-family: "Material Symbols Outlined" !important;
+        font-style: normal !important;
+        font-weight: normal !important;
+        line-height: 1 !important;
+        letter-spacing: normal !important;
+        text-transform: none !important;
+        white-space: nowrap !important;
+        word-wrap: normal !important;
+        -webkit-font-feature-settings: "liga" !important;
+        font-feature-settings: "liga" !important;
+        -webkit-font-smoothing: antialiased;
+    }}
     .stApp {{
         background:
             radial-gradient(circle at 12% 8%, rgba(110, 215, 255, 0.42), transparent 30rem),
