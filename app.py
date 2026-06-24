@@ -411,6 +411,30 @@ st.markdown(
         white-space: nowrap;
     }}
     table.glass-table tr:nth-child(even) td {{ background: rgba(255,255,255,0.42); }}
+    [data-testid="stExpander"] {{
+        border-radius: 16px;
+        overflow: hidden;
+    }}
+    [data-testid="stExpander"] details > summary {{
+        display: flex;
+        align-items: center;
+        gap: 0.5rem;
+    }}
+    [data-testid="stExpander"] details > summary > span:first-child {{
+        font-size: 0;
+        width: 1rem;
+        height: 1rem;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+    }}
+    [data-testid="stExpander"] details > summary > span:first-child::after {{
+        content: "▸";
+        font-size: 1rem;
+    }}
+    [data-testid="stExpander"] details[open] > summary > span:first-child::after {{
+        content: "▾";
+    }}
     [data-testid="stDataFrame"], [data-testid="stDataEditor"] {{
         border-radius: 22px;
         overflow: hidden;
