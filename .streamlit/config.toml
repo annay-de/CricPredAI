@@ -10,24 +10,24 @@ gatherUsageStats = false
 
 [theme]
 base = "dark"
-primaryColor = "#4DA3FF"
+primaryColor = "#8052FF"
 backgroundColor = "#000000"
-secondaryBackgroundColor = "#101113"
+secondaryBackgroundColor = "#000000"
 textColor = "#F0F0F0"
 font = "sans serif"
 
 # The app is designed for one look only: night match. Pin the same palette
 # for both variants so system light mode cannot flip widgets to white.
 [theme.light]
-primaryColor = "#4DA3FF"
+primaryColor = "#8052FF"
 backgroundColor = "#000000"
-secondaryBackgroundColor = "#101113"
+secondaryBackgroundColor = "#000000"
 textColor = "#F0F0F0"
 font = "sans serif"
 
 [theme.dark]
-primaryColor = "#4DA3FF"
+primaryColor = "#8052FF"
 backgroundColor = "#000000"
-secondaryBackgroundColor = "#101113"
+secondaryBackgroundColor = "#000000"
 textColor = "#F0F0F0"
 font = "sans serif"

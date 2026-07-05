@@ -16,7 +16,8 @@ from simulator import (
     simulate_distribution,
     simulate_match,
 )
-from theme import APP_CSS, PALETTE, pitch_constellation
+from particles import particles_html
+from theme import APP_CSS, PALETTE
 
 st.set_page_config(
     page_title="CricPredAI — IPL Simulation Desk",
@@ -504,25 +505,26 @@ def render_masthead() -> None:
 # ---------------------------------------------------------------------------
 
 def render_match_lab() -> None:
-    st.markdown(
-        '<div class="hero">'
-        + pitch_constellation()
-        + '<div class="eyebrow">role-aware · ball-by-ball · 2008–2026</div>'
-        '<div class="h1">Every ball,<br>priced.</div>'
-        '<div class="copy">A ball-by-ball probabilistic engine trained on every IPL '
-        "delivery ever bowled. Set the batting order, nominate the attack, choose "
-        "the ground — then watch one match play out, and see the full distribution "
-        "of ways it could have gone.</div>"
-        '<div class="herostats">'
-        '<div class="hs"><b>288,051</b><span>deliveries</span></div>'
-        '<div class="hs"><b>1,212</b><span>matches</span></div>'
-        '<div class="hs"><b>794</b><span>players</span></div>'
-        '<div class="hs"><b>37</b><span>venues</span></div>'
-        "</div>"
-        '<div class="scrollcue"><span>( scroll )</span><i></i></div>'
-        "</div>",
-        unsafe_allow_html=True,
-    )
+    hero_cols = st.columns([1.02, 0.98])
+    with hero_cols[0]:
+        st.markdown(
+            '<div class="hero">'
+            '<div class="eyebrow">Role-aware · ball-by-ball · 2008–2026</div>'
+            '<div class="h1">Every ball, priced.</div>'
+            '<div class="copy">A ball-by-ball probabilistic engine trained on every IPL '
+            "delivery ever bowled. Set the batting order, nominate the attack, choose "
+            "the ground — then watch one match play out, and see the full distribution "
+            "of ways it could have gone.</div>"
+            '<div class="herostats">'
+            '<div class="hs"><b>288,051</b><span>deliveries</span></div>'
+            '<div class="hs"><b>1,212</b><span>matches</span></div>'
+            '<div class="hs"><b>794</b><span>players</span></div>'
+            '<div class="hs"><b>37</b><span>venues</span></div>'
+            "</div></div>",
+            unsafe_allow_html=True,
+        )
+    with hero_cols[1]:
+        components.html(particles_html(), height=620, scrolling=False)
 
     section("01", "Evidence", "How should history be weighted?")
     profile = st.radio(
@@ -812,9 +814,8 @@ def render_results() -> None:
     if not run:
         st.markdown(
             '<div class="hero">'
-            + pitch_constellation()
-            + '<div class="eyebrow">match day · no simulation loaded</div>'
-            '<div class="h1">The ground is ready.<br>Nobody is batting yet.</div>'
+            '<div class="eyebrow">Match day · no simulation loaded</div>'
+            '<div class="h1" style="font-size:clamp(44px,5.4vw,78px);letter-spacing:-0.04em">The ground is ready.<br>Nobody is batting yet.</div>'
             '<div class="copy">Build two elevens in the Match Lab, pick your ground '
             "and your evidence profile, and simulate the game. It replays here ball "
             "by ball — scorecard, worm, commentary, and the full distribution of "
@@ -1018,9 +1019,8 @@ def render_results() -> None:
 def render_model_notes() -> None:
     st.markdown(
         '<div class="hero">'
-        + pitch_constellation()
-        + '<div class="eyebrow">under the hood · two evidence profiles</div>'
-        '<div class="h1">One engine,<br>every era.</div>'
+        '<div class="eyebrow">Under the hood · two evidence profiles</div>'
+        '<div class="h1" style="font-size:clamp(44px,5.4vw,78px);letter-spacing:-0.04em">One engine,<br>every era.</div>'
         '<div class="copy">Modern mode emphasises current IPL form through recency '
         "weighting. Lifetime mode keeps the full career record intact for legends "
         "and cross-era matchups. Both share the same leakage-safe delivery state "
