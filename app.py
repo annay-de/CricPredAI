@@ -16,7 +16,7 @@ from simulator import (
     simulate_distribution,
     simulate_match,
 )
-from theme import APP_CSS, PALETTE
+from theme import APP_CSS, PALETTE, hero_particles
 
 st.set_page_config(
     page_title="CricPredAI — IPL Simulation Desk",
@@ -27,7 +27,7 @@ st.set_page_config(
 
 st.markdown(APP_CSS, unsafe_allow_html=True)
 
-MONO_FONT = "IBM Plex Mono, ui-monospace, monospace"
+MONO_FONT = "Martian Mono, IBM Plex Mono, ui-monospace, monospace"
 
 PROFILE_LABELS = {
     "modern": "Modern form",
@@ -144,8 +144,8 @@ def chart_layout(figure: go.Figure, height: int = 420) -> go.Figure:
         height=height,
         margin={"l": 10, "r": 10, "t": 24, "b": 10},
         paper_bgcolor="rgba(0,0,0,0)",
-        plot_bgcolor="rgba(14, 19, 13, 0.6)",
-        font={"color": PALETTE["muted"], "family": MONO_FONT, "size": 11},
+        plot_bgcolor="rgba(0,0,0,0)",
+        font={"color": PALETTE["muted"], "family": MONO_FONT, "size": 10},
         legend={
             "orientation": "h",
             "y": 1.1,
@@ -153,7 +153,7 @@ def chart_layout(figure: go.Figure, height: int = 420) -> go.Figure:
             "font": {"color": PALETTE["ink"]},
         },
         hoverlabel={
-            "bgcolor": "#10150F",
+            "bgcolor": "#101012",
             "bordercolor": PALETTE["line"],
             "font": {"color": PALETTE["ink"], "family": MONO_FONT},
         },
@@ -379,7 +379,7 @@ def wilson_interval(successes: int, total: int) -> tuple[float, float]:
 
 def manhattan_figure(result: dict) -> go.Figure:
     figure = go.Figure()
-    palette = [PALETTE["lime"], PALETTE["orange"]]
+    palette = [PALETTE["blue"], PALETTE["mist"]]
     offsets = [-0.19, 0.19]
     for index, innings in enumerate([result["first"], result["second"]]):
         overs = innings.get("over_summary", pd.DataFrame())
@@ -425,9 +425,9 @@ def manhattan_figure(result: dict) -> go.Figure:
 def probability_figure(distribution: pd.DataFrame, result: dict) -> go.Figure:
     figure = go.Figure()
     palette = {
-        result["first"]["team"]: PALETTE["lime"],
-        result["second"]["team"]: PALETTE["orange"],
-        "Tie": PALETTE["gold"],
+        result["first"]["team"]: PALETTE["blue"],
+        result["second"]["team"]: PALETTE["mist"],
+        "Tie": PALETTE["muted"],
     }
     for winner, group in distribution.groupby("winner", sort=False):
         figure.add_trace(
@@ -438,10 +438,10 @@ def probability_figure(distribution: pd.DataFrame, result: dict) -> go.Figure:
                 name=str(winner),
                 marker={
                     "color": palette.get(str(winner), PALETTE["muted"]),
-                    "size": 10,
+                    "size": 8,
                     "opacity": 0.85,
-                    "symbol": "square",
-                    "line": {"color": "rgba(11,15,12,0.7)", "width": 1},
+                    "symbol": "circle",
+                    "line": {"color": "rgba(7,7,8,0.7)", "width": 1},
                 },
                 customdata=np.column_stack([group["sim"], group["seed"]]),
                 hovertemplate=(
@@ -488,34 +488,13 @@ def probability_figure(distribution: pd.DataFrame, result: dict) -> go.Figure:
 
 def render_masthead() -> None:
     st.markdown(
-        """
-        <div class="masthead">
-            <div class="mh-brand">
-                <div class="mh-mark" aria-hidden="true"></div>
-                <div>
-                    <div class="mh-name">CricPred<span>AI</span></div>
-                    <div class="mh-sub">IPL Simulation Desk</div>
-                </div>
-            </div>
-            <div class="mh-right">
-                <div><b>288,051</b> deliveries<br>calibrated archive · 2008–2026</div>
-            </div>
-        </div>
-        """,
-        unsafe_allow_html=True,
-    )
-    ticker_items = (
-        "<span>288,051 ball-by-ball events</span><span>·</span>"
-        "<span><b>1,212</b> IPL matches</span><span>·</span>"
-        "<span><b>794</b> players indexed</span><span>·</span>"
-        "<span><b>37</b> venues canonicalised</span><span>·</span>"
-        "<span>2008 – 2026</span><span>·</span>"
-        "<span>leakage-safe pre-delivery features</span><span>·</span>"
-        "<span>XGBoost log-loss <b>1.7136</b> beats baseline 1.8670</span><span>·</span>"
-        "<span>every catch attributed, every wide re-bowled</span><span>·</span>"
-    )
-    st.markdown(
-        f'<div class="ticker"><div class="belt">{ticker_items}{ticker_items}</div></div>',
+        '<div class="masthead">'
+        '<div class="mh-brand">'
+        '<span class="mh-dot" aria-hidden="true"></span>'
+        '<span class="mh-name">CricPred <span>AI</span></span>'
+        "</div>"
+        '<div class="mh-right"><b>288,051</b> deliveries · calibrated archive · 2008 – 2026</div>'
+        "</div>",
         unsafe_allow_html=True,
     )
 
@@ -526,24 +505,22 @@ def render_masthead() -> None:
 
 def render_match_lab() -> None:
     st.markdown(
-        """
-        <div class="hero">
-            <div class="eyebrow">Role-aware match intelligence</div>
-            <div class="h1">Pick the eleven.<br><em>Run the night.</em></div>
-            <div class="copy">
-                A ball-by-ball probabilistic engine trained on every IPL delivery
-                ever bowled. Set the batting order, nominate the bowling attack,
-                choose the ground — then watch the match play out, and see the
-                full distribution of ways it could have gone.
-            </div>
-            <div class="herostats">
-                <div class="hs"><b>288,051</b><span>deliveries</span></div>
-                <div class="hs"><b>1,212</b><span>matches</span></div>
-                <div class="hs"><b>794</b><span>players</span></div>
-                <div class="hs"><b>37</b><span>venues</span></div>
-            </div>
-        </div>
-        """,
+        '<div class="hero">'
+        + hero_particles()
+        + '<div class="eyebrow">Role-aware match intelligence</div>'
+        '<div class="h1">Every eleven you pick<br>is a <em>thousand matches</em><br>waiting to happen.</div>'
+        '<div class="copy">A ball-by-ball probabilistic engine trained on every IPL '
+        "delivery ever bowled. Set the batting order, nominate the attack, choose "
+        "the ground — then watch one match play out, and see the full distribution "
+        "of ways it could have gone.</div>"
+        '<div class="herostats">'
+        '<div class="hs"><b>288,051</b><span>deliveries</span></div>'
+        '<div class="hs"><b>1,212</b><span>matches</span></div>'
+        '<div class="hs"><b>794</b><span>players</span></div>'
+        '<div class="hs"><b>37</b><span>venues</span></div>'
+        "</div>"
+        '<div class="scrollcue"><span>( scroll )</span><i></i></div>'
+        "</div>",
         unsafe_allow_html=True,
     )
 
@@ -834,18 +811,14 @@ def render_results() -> None:
     run = st.session_state.get("latest_run")
     if not run:
         st.markdown(
-            """
-            <div class="hero">
-                <div class="eyebrow">Match day</div>
-                <div class="h1">The floodlights are on.<br><em>Nobody is batting.</em></div>
-                <div class="copy">
-                    Build two elevens in the Match Lab, pick your ground and your
-                    evidence profile, and simulate the game. It replays here ball
-                    by ball — scorecard, worm, commentary, and the full
-                    distribution of repeated matches.
-                </div>
-            </div>
-            """,
+            '<div class="hero">'
+            + hero_particles()
+            + '<div class="eyebrow">Match day</div>'
+            '<div class="h1">The ground is ready.<br><em>Nobody is batting yet.</em></div>'
+            '<div class="copy">Build two elevens in the Match Lab, pick your ground '
+            "and your evidence profile, and simulate the game. It replays here ball "
+            "by ball — scorecard, worm, commentary, and the full distribution of "
+            "repeated matches.</div></div>",
             unsafe_allow_html=True,
         )
         return
@@ -930,14 +903,11 @@ def render_results() -> None:
             config={"displayModeBar": False},
         )
         for index, innings in enumerate([result["first"], result["second"]]):
-            klass = "second" if index else ""
             st.markdown(
-                f"""
-                <div class="inn-head {klass}">
-                    <h3>{index + 1} · {escape(innings["team"])}</h3>
-                    <div class="sc">{innings["runs"]}/{innings["wickets"]} ({escape(innings["overs"])} ov · {escape(innings["end_reason"])})</div>
-                </div>
-                """,
+                f'<div class="inn-head"><h3><span class="n">{"First" if index == 0 else "Second"} innings</span> '
+                f"— {escape(innings['team'])}</h3>"
+                f'<div class="sc"><b>{innings["runs"]}/{innings["wickets"]}</b> '
+                f"({escape(innings['overs'])} ov · {escape(innings['end_reason'])})</div></div>",
                 unsafe_allow_html=True,
             )
             st.markdown("#### Batting")
@@ -1047,18 +1017,14 @@ def render_results() -> None:
 
 def render_model_notes() -> None:
     st.markdown(
-        """
-        <div class="hero">
-            <div class="eyebrow">Under the hood</div>
-            <div class="h1">One engine.<br><em>Every era.</em></div>
-            <div class="copy">
-                Modern mode emphasises current IPL form through recency weighting.
-                Lifetime mode keeps the full career record intact for legends and
-                cross-era matchups. Both share the same leakage-safe delivery state
-                and chase features.
-            </div>
-        </div>
-        """,
+        '<div class="hero">'
+        + hero_particles()
+        + '<div class="eyebrow">Under the hood</div>'
+        '<div class="h1">One engine,<br><em>every era.</em></div>'
+        '<div class="copy">Modern mode emphasises current IPL form through recency '
+        "weighting. Lifetime mode keeps the full career record intact for legends "
+        "and cross-era matchups. Both share the same leakage-safe delivery state "
+        "and chase features.</div></div>",
         unsafe_allow_html=True,
     )
 
