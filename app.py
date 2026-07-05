@@ -16,22 +16,22 @@ from simulator import (
 )
 
 st.set_page_config(
-    page_title="CricPred | IPL Simulation Lab",
+    page_title="CricPredAI | IPL Simulation Lab",
     page_icon="C",
     layout="wide",
     initial_sidebar_state="collapsed",
 )
 
 COLORS = {
-    "ink": "#102033",
-    "muted": "#63738A",
-    "paper": "#F6F9FF",
-    "panel": "rgba(255,255,255,0.78)",
-    "line": "#D9E3F1",
-    "blue": "#0B5FA5",
-    "navy": "#07192D",
-    "copper": "#CC745D",
-    "gold": "#B5892E",
+    "ink": "#F7FBFF",
+    "muted": "#93A8C2",
+    "paper": "#06111F",
+    "panel": "rgba(8, 23, 42, 0.78)",
+    "line": "rgba(150, 187, 226, 0.18)",
+    "blue": "#38BDF8",
+    "navy": "#020817",
+    "copper": "#8B5CF6",
+    "gold": "#F8C14A",
 }
 
 st.markdown(
@@ -46,12 +46,15 @@ st.markdown(
         --blue: {COLORS["blue"]};
         --navy: {COLORS["navy"]};
         --copper: {COLORS["copper"]};
-        --cyan: #6ED7FF;
-        --violet: #A79BFF;
-        --glass: rgba(255,255,255,0.70);
-        --glass-strong: rgba(255,255,255,0.88);
-        --shadow: 0 24px 70px rgba(8, 29, 55, 0.18);
-        --font: Inter, "SF Pro Display", "SF Pro Text", "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+        --cyan: #67E8F9;
+        --violet: #A78BFA;
+        --ice: #DDF7FF;
+        --glass: rgba(8, 23, 42, 0.58);
+        --glass-strong: rgba(10, 30, 55, 0.78);
+        --glass-light: rgba(226, 245, 255, 0.08);
+        --shadow: 0 26px 90px rgba(0, 0, 0, 0.42);
+        --glow: 0 0 42px rgba(56, 189, 248, 0.20);
+        --font: Inter, "SF Pro Display", "SF Pro Text", "Aptos", "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
     }}
     .stApp,
     .stApp button,
@@ -89,11 +92,12 @@ st.markdown(
     }}
     .stApp {{
         background:
-            radial-gradient(circle at 12% 8%, rgba(110, 215, 255, 0.42), transparent 30rem),
-            radial-gradient(circle at 92% 0%, rgba(82, 115, 255, 0.22), transparent 31rem),
-            radial-gradient(circle at 80% 72%, rgba(26, 97, 168, 0.16), transparent 27rem),
-            linear-gradient(135deg, #F8FBFF 0%, #EDF5FF 48%, #F7FAFF 100%);
+            radial-gradient(circle at 8% 6%, rgba(56, 189, 248, 0.30), transparent 32rem),
+            radial-gradient(circle at 92% 2%, rgba(99, 102, 241, 0.24), transparent 34rem),
+            radial-gradient(circle at 82% 78%, rgba(34, 211, 238, 0.16), transparent 30rem),
+            linear-gradient(135deg, #020817 0%, #06142A 46%, #020817 100%);
         color: var(--ink);
+        overflow-x: hidden;
     }}
     .stApp::before {{
         content: "";
@@ -101,20 +105,41 @@ st.markdown(
         inset: 0;
         pointer-events: none;
         background-image:
-            linear-gradient(rgba(255,255,255,0.36) 1px, transparent 1px),
-            linear-gradient(90deg, rgba(255,255,255,0.36) 1px, transparent 1px);
-        background-size: 42px 42px;
-        mask-image: linear-gradient(to bottom, rgba(0,0,0,0.35), transparent 75%);
+            linear-gradient(rgba(148, 188, 226, 0.08) 1px, transparent 1px),
+            linear-gradient(90deg, rgba(148, 188, 226, 0.08) 1px, transparent 1px);
+        background-size: 44px 44px;
+        mask-image: radial-gradient(circle at 50% 0%, rgba(0,0,0,0.86), transparent 70%);
+        z-index: 0;
+    }}
+    .stApp::after {{
+        content: "";
+        position: fixed;
+        width: 48rem;
+        height: 48rem;
+        right: -18rem;
+        top: 8rem;
+        pointer-events: none;
+        border-radius: 42% 58% 68% 32% / 42% 38% 62% 58%;
+        background:
+            radial-gradient(circle at 34% 24%, rgba(103, 232, 249, 0.40), transparent 15rem),
+            radial-gradient(circle at 68% 66%, rgba(79, 70, 229, 0.35), transparent 17rem),
+            linear-gradient(135deg, rgba(56, 189, 248, 0.14), rgba(2, 8, 23, 0));
+        filter: blur(18px);
+        opacity: 0.86;
+        transform: rotate(-14deg);
+        z-index: 0;
     }}
     header[data-testid="stHeader"], [data-testid="stToolbar"] {{ display: none; }}
     [data-testid="stMainBlockContainer"] {{
         max-width: 1260px;
         padding-top: 1.4rem;
         padding-bottom: 4rem;
+        position: relative;
+        z-index: 1;
     }}
     h1, h2, h3, h4 {{
         color: var(--ink);
-        letter-spacing: -0.04em;
+        letter-spacing: -0.055em;
     }}
     h1 {{
         font-size: clamp(2.2rem, 5vw, 4.6rem);
@@ -125,14 +150,16 @@ st.markdown(
         align-items: center;
         justify-content: space-between;
         gap: 1.5rem;
-        border: 1px solid rgba(255,255,255,0.74);
-        background: rgba(255,255,255,0.64);
-        backdrop-filter: blur(24px) saturate(170%);
-        -webkit-backdrop-filter: blur(24px) saturate(170%);
-        box-shadow: 0 12px 38px rgba(30, 67, 111, 0.10);
-        border-radius: 26px;
-        padding: 0.72rem 0.88rem;
-        margin-bottom: 1rem;
+        border: 1px solid rgba(170, 214, 255, 0.17);
+        background:
+            linear-gradient(135deg, rgba(15, 35, 62, 0.70), rgba(7, 18, 34, 0.52)),
+            linear-gradient(90deg, rgba(56, 189, 248, 0.12), transparent 42%);
+        backdrop-filter: blur(28px) saturate(180%);
+        -webkit-backdrop-filter: blur(28px) saturate(180%);
+        box-shadow: 0 18px 54px rgba(0, 0, 0, 0.26);
+        border-radius: 28px;
+        padding: 0.78rem 0.92rem;
+        margin-bottom: 1.05rem;
     }}
     .brand {{ display: flex; align-items: center; gap: 0.75rem; }}
     .brand-mark {{
@@ -140,16 +167,25 @@ st.markdown(
         height: 2.5rem;
         position: relative;
         display: block;
-        border-radius: 16px;
-        background: linear-gradient(135deg, var(--navy), var(--blue) 58%, var(--cyan));
-        box-shadow: 0 12px 26px rgba(11, 95, 165, 0.26);
+        border-radius: 999px;
+        background:
+            radial-gradient(circle at 34% 28%, rgba(221, 247, 255, 0.95), transparent 0.42rem),
+            conic-gradient(from 210deg, var(--cyan), var(--blue), var(--violet), var(--cyan));
+        box-shadow: 0 0 28px rgba(56, 189, 248, 0.35);
         overflow: hidden;
+    }}
+    .brand-mark::after {{
+        content: "";
+        position: absolute;
+        inset: 0.45rem;
+        border: 1px solid rgba(2, 8, 23, 0.56);
+        border-radius: 999px;
     }}
     .brand-mark span {{
         position: absolute;
         display: block;
         border-radius: 999px;
-        background: rgba(255,255,255,0.86);
+        background: rgba(2, 8, 23, 0.60);
         transform: rotate(-35deg);
     }}
     .brand-mark span:nth-child(1) {{
@@ -174,44 +210,62 @@ st.markdown(
     }}
     .brand-name {{
         font-weight: 850;
-        letter-spacing: 0.08em;
+        letter-spacing: 0.12em;
         text-transform: uppercase;
+        color: var(--ink);
     }}
     .brand-sub, .coverage {{
         color: var(--muted);
         font-size: 0.76rem;
     }}
+    .coverage strong {{ color: var(--ice); }}
     .coverage {{ text-align: right; letter-spacing: 0.02em; }}
     .hero {{
         position: relative;
         overflow: hidden;
         padding: clamp(2.2rem, 5vw, 4.8rem);
-        border: 1px solid rgba(255,255,255,0.24);
-        border-radius: 36px;
+        border: 1px solid rgba(170, 214, 255, 0.18);
+        border-radius: 38px;
         margin-bottom: 1.8rem;
         background:
-            radial-gradient(circle at 88% 18%, rgba(110, 215, 255, 0.55), transparent 21rem),
-            radial-gradient(circle at 24% 8%, rgba(167, 155, 255, 0.36), transparent 19rem),
-            linear-gradient(135deg, #07192D 0%, #0A315D 52%, #0D6FAE 100%);
+            radial-gradient(circle at 85% 20%, rgba(103, 232, 249, 0.36), transparent 20rem),
+            radial-gradient(circle at 18% 0%, rgba(99, 102, 241, 0.38), transparent 22rem),
+            linear-gradient(135deg, rgba(6, 20, 42, 0.96) 0%, rgba(8, 38, 73, 0.92) 56%, rgba(2, 8, 23, 0.96) 100%);
         color: white;
         box-shadow: var(--shadow);
+        backdrop-filter: blur(18px) saturate(165%);
+        -webkit-backdrop-filter: blur(18px) saturate(165%);
+    }}
+    .hero::before {{
+        content: "";
+        position: absolute;
+        inset: 0;
+        background:
+            linear-gradient(rgba(221,247,255,0.07) 1px, transparent 1px),
+            linear-gradient(90deg, rgba(221,247,255,0.07) 1px, transparent 1px);
+        background-size: 46px 46px;
+        mask-image: linear-gradient(120deg, rgba(0,0,0,0.70), transparent 72%);
     }}
     .hero::after {{
         content: "";
         position: absolute;
-        right: -8rem;
-        bottom: -9rem;
-        width: 28rem;
-        height: 28rem;
-        border-radius: 50%;
-        background: rgba(255,255,255,0.12);
+        right: -7rem;
+        bottom: -10rem;
+        width: 31rem;
+        height: 31rem;
+        border-radius: 44% 56% 60% 40% / 47% 37% 63% 53%;
+        background:
+            radial-gradient(circle at 38% 30%, rgba(221,247,255,0.34), transparent 7rem),
+            conic-gradient(from 140deg, rgba(103,232,249,0.55), rgba(79,70,229,0.32), rgba(56,189,248,0.08), rgba(103,232,249,0.55));
+        filter: blur(2px);
+        opacity: 0.64;
     }}
     .eyebrow {{
         position: relative;
-        color: #BFEAFF;
+        color: var(--cyan);
         font-size: 0.72rem;
         font-weight: 850;
-        letter-spacing: 0.14em;
+        letter-spacing: 0.18em;
         text-transform: uppercase;
         margin-bottom: 0.75rem;
     }}
@@ -224,7 +278,7 @@ st.markdown(
     }}
     .hero-copy {{
         position: relative;
-        color: rgba(255,255,255,0.78);
+        color: rgba(221,247,255,0.78);
         max-width: 720px;
         margin-top: 1.2rem;
         font-size: 1.04rem;
@@ -235,7 +289,7 @@ st.markdown(
         align-items: baseline;
         justify-content: space-between;
         gap: 1rem;
-        border-bottom: 1px solid rgba(16,32,51,0.08);
+        border-bottom: 1px solid var(--line);
         padding: 1.2rem 0 0.8rem;
         margin: 0.55rem 0 1.1rem;
     }}
@@ -254,33 +308,83 @@ st.markdown(
     .score-box,
     .model-card {{
         background: var(--glass-strong);
-        border: 1px solid rgba(255,255,255,0.72);
-        border-radius: 24px;
-        box-shadow: 0 16px 40px rgba(21,54,93,0.10);
-        backdrop-filter: blur(18px) saturate(160%);
-        -webkit-backdrop-filter: blur(18px) saturate(160%);
+        border: 1px solid rgba(170, 214, 255, 0.16);
+        border-radius: 26px;
+        box-shadow: var(--shadow);
+        backdrop-filter: blur(22px) saturate(170%);
+        -webkit-backdrop-filter: blur(22px) saturate(170%);
+    }}
+    div[data-testid="stMetric"] {{
+        padding: 0.95rem 1rem;
+    }}
+    div[data-testid="stMetric"] [data-testid="stMetricLabel"] p,
+    div[data-testid="stMetric"] [data-testid="stMetricLabel"] {{
+        color: var(--muted) !important;
+    }}
+    div[data-testid="stMetric"] [data-testid="stMetricValue"],
+    div[data-testid="stMetric"] [data-testid="stMetricValue"] div {{
+        color: var(--ink) !important;
     }}
     div[data-testid="stTextInput"] input,
     div[data-testid="stSelectbox"] div[data-baseweb="select"],
     div[data-testid="stNumberInput"] input,
     div[data-testid="stMultiSelect"] div[data-baseweb="select"] {{
-        border-radius: 16px !important;
-        background: rgba(255,255,255,0.74) !important;
-        border-color: rgba(144,169,200,0.42) !important;
+        border-radius: 18px !important;
+        background: rgba(221, 247, 255, 0.08) !important;
+        border-color: rgba(170, 214, 255, 0.18) !important;
+        color: var(--ink) !important;
+        box-shadow: inset 0 1px 0 rgba(255,255,255,0.08);
+    }}
+    div[data-baseweb="select"] span,
+    div[data-baseweb="select"] div,
+    div[data-testid="stTextInput"] input,
+    div[data-testid="stNumberInput"] input {{
+        color: var(--ink) !important;
+    }}
+    div[data-baseweb="popover"],
+    div[data-baseweb="menu"],
+    ul[role="listbox"] {{
+        background: rgba(7, 18, 34, 0.98) !important;
+        border: 1px solid rgba(170, 214, 255, 0.18) !important;
+        color: var(--ink) !important;
+        box-shadow: 0 22px 70px rgba(0, 0, 0, 0.44) !important;
+    }}
+    div[role="option"],
+    li[role="option"] {{
+        color: var(--ink) !important;
+        background: transparent !important;
+    }}
+    div[role="option"]:hover,
+    li[role="option"]:hover {{
+        background: rgba(56, 189, 248, 0.16) !important;
+    }}
+    div[data-baseweb="tag"] {{
+        background: rgba(56, 189, 248, 0.18) !important;
+        border: 1px solid rgba(103, 232, 249, 0.28) !important;
+        color: var(--ink) !important;
+    }}
+    input:disabled {{
+        -webkit-text-fill-color: var(--muted) !important;
+        opacity: 1 !important;
+    }}
+    label, div[data-testid="stWidgetLabel"] p {{
+        color: var(--ice) !important;
+        font-weight: 650;
     }}
     div[data-testid="stRadio"] > div {{ gap: 0.35rem; }}
     div[data-testid="stRadio"] label {{
-        border: 1px solid rgba(144,169,200,0.34);
-        background: rgba(255,255,255,0.62);
+        border: 1px solid rgba(170, 214, 255, 0.18);
+        background: rgba(221, 247, 255, 0.07);
         border-radius: 999px;
         padding: 0.45rem 0.88rem;
         min-height: 2.35rem;
-        box-shadow: 0 8px 22px rgba(18, 54, 92, 0.06);
+        box-shadow: 0 10px 28px rgba(0, 0, 0, 0.18);
     }}
     div[data-testid="stRadio"] label:has(input:checked) {{
-        border-color: rgba(11,95,165,0.55);
-        background: linear-gradient(135deg, var(--navy), var(--blue));
+        border-color: rgba(103, 232, 249, 0.42);
+        background: linear-gradient(135deg, rgba(14, 116, 144, 0.92), rgba(37, 99, 235, 0.86));
         color: white;
+        box-shadow: 0 0 26px rgba(56, 189, 248, 0.18);
     }}
     div[data-testid="stRadio"] label:has(input:checked) p,
     div[data-testid="stRadio"] label:has(input:checked) span {{
@@ -291,20 +395,25 @@ st.markdown(
         border-radius: 999px;
         min-height: 2.75rem;
         font-weight: 850;
-        letter-spacing: 0.02em;
-        box-shadow: 0 12px 30px rgba(11, 95, 165, 0.16);
+        letter-spacing: 0.03em;
+        border-color: rgba(170, 214, 255, 0.22);
+        background: rgba(221, 247, 255, 0.08);
+        color: var(--ink);
+        box-shadow: 0 14px 34px rgba(0, 0, 0, 0.24);
     }}
     div[data-testid="stButton"] button[kind="primary"] {{
-        background: linear-gradient(135deg, var(--navy), var(--blue));
-        border-color: rgba(255,255,255,0.24);
+        background: linear-gradient(135deg, #0EA5E9, #2563EB 58%, #7C3AED);
+        border-color: rgba(221,247,255,0.28);
+        color: white;
+        box-shadow: 0 18px 48px rgba(37, 99, 235, 0.34);
     }}
     .profile-note {{
-        border: 1px solid rgba(255,255,255,0.72);
+        border: 1px solid rgba(170, 214, 255, 0.18);
         border-left: 5px solid var(--blue);
         border-radius: 18px;
-        background: rgba(255,255,255,0.64);
+        background: rgba(8, 23, 42, 0.62);
         padding: 0.82rem 1rem;
-        color: #4C5F78;
+        color: var(--muted);
         font-size: 0.85rem;
         line-height: 1.5;
         margin: 0.15rem 0 1rem;
@@ -316,21 +425,22 @@ st.markdown(
         margin-bottom: 0.7rem;
     }}
     .result-banner {{
-        border: 1px solid rgba(255,255,255,0.22);
-        border-top: 6px solid #74D6FF;
+        border: 1px solid rgba(170, 214, 255, 0.18);
+        border-top: 6px solid var(--cyan);
         border-radius: 30px;
         background:
-            radial-gradient(circle at 92% 10%, rgba(110,215,255,0.50), transparent 18rem),
-            linear-gradient(135deg, var(--navy), #0B4F89);
+            radial-gradient(circle at 92% 10%, rgba(103,232,249,0.34), transparent 18rem),
+            radial-gradient(circle at 24% 0%, rgba(124,58,237,0.26), transparent 18rem),
+            linear-gradient(135deg, rgba(4,16,31,0.96), rgba(8,47,73,0.88));
         color: white;
         padding: 1.8rem 2rem;
         margin-bottom: 1rem;
         box-shadow: var(--shadow);
     }}
     .result-kicker {{
-        color: #B9D3EC;
+        color: var(--cyan);
         font-size: 0.72rem;
-        letter-spacing: 0.13em;
+        letter-spacing: 0.16em;
         text-transform: uppercase;
     }}
     .result-title {{
@@ -360,10 +470,10 @@ st.markdown(
         align-items: baseline;
         justify-content: space-between;
         gap: 1rem;
-        border: 1px solid rgba(255,255,255,0.72);
+        border: 1px solid rgba(170, 214, 255, 0.17);
         border-left: 5px solid var(--blue);
         border-radius: 20px;
-        background: rgba(255,255,255,0.68);
+        background: rgba(8, 23, 42, 0.66);
         padding: 0.85rem 1rem;
         margin: 0.45rem 0 0.9rem;
     }}
@@ -371,7 +481,7 @@ st.markdown(
     .innings-score {{ color: var(--blue); font-weight: 850; white-space: nowrap; }}
     .innings-divider {{
         height: 1px;
-        background: rgba(16,32,51,0.08);
+        background: var(--line);
         margin: 1.8rem 0;
     }}
     .model-card {{
@@ -395,31 +505,79 @@ st.markdown(
         grid-template-columns: 11rem 1fr;
         gap: 1rem;
         padding: 0.85rem 0;
-        border-bottom: 1px solid rgba(16,32,51,0.08);
+        border-bottom: 1px solid var(--line);
     }}
     .support-row strong {{ font-size: 0.84rem; }}
     .support-row span {{ color: var(--muted); font-size: 0.84rem; line-height: 1.5; }}
     .footer {{
-        border-top: 1px solid rgba(16,32,51,0.08);
+        border-top: 1px solid var(--line);
         margin-top: 3rem;
         padding-top: 1.15rem;
         display: flex;
+        align-items: center;
         justify-content: space-between;
         gap: 1rem;
         color: var(--muted);
         font-size: 0.78rem;
     }}
-    .footer a {{ color: var(--ink); text-decoration: none; border-bottom: 1px solid var(--line); }}
+    .footer strong {{ color: var(--ink); }}
+    .footer a {{ color: var(--ice); text-decoration: none; border-bottom: 1px solid rgba(103,232,249,0.36); }}
+    .footer-meta {{
+        display: flex;
+        align-items: center;
+        justify-content: flex-end;
+        gap: 0.6rem;
+        flex-wrap: wrap;
+    }}
+    .social-links {{
+        display: inline-flex;
+        align-items: center;
+        gap: 0.45rem;
+    }}
+    .footer a.social-link {{
+        width: 2.05rem;
+        height: 2.05rem;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        border-radius: 999px;
+        border: 1px solid rgba(103, 232, 249, 0.30);
+        border-bottom: 1px solid rgba(103, 232, 249, 0.30);
+        background:
+            radial-gradient(circle at 32% 24%, rgba(221, 247, 255, 0.20), transparent 0.72rem),
+            linear-gradient(135deg, rgba(56, 189, 248, 0.16), rgba(124, 58, 237, 0.12));
+        color: var(--ink);
+        font-weight: 850;
+        line-height: 1;
+        box-shadow: 0 12px 30px rgba(0, 0, 0, 0.22);
+        transition: transform 150ms ease, border-color 150ms ease, box-shadow 150ms ease;
+    }}
+    .footer a.social-link:hover {{
+        border-color: rgba(103, 232, 249, 0.62);
+        box-shadow: 0 0 28px rgba(56, 189, 248, 0.20);
+        transform: translateY(-1px);
+    }}
+    .social-link .social-glyph {{
+        display: inline-block;
+        color: var(--ink);
+        font-size: 0.82rem;
+        letter-spacing: -0.03em;
+    }}
+    .social-link.linkedin .social-glyph {{
+        font-size: 0.78rem;
+        letter-spacing: -0.08em;
+        transform: translateY(-0.02rem);
+    }}
     .glass-table-wrap {{
         width: 100%;
         max-height: 520px;
         overflow: auto;
-        border: 1px solid rgba(255,255,255,0.72);
+        border: 1px solid rgba(170, 214, 255, 0.16);
         border-radius: 22px;
-        background: rgba(255,255,255,0.72);
-        box-shadow: 0 16px 40px rgba(21,54,93,0.09);
-        backdrop-filter: blur(18px) saturate(160%);
-        -webkit-backdrop-filter: blur(18px) saturate(160%);
+        background: rgba(8, 23, 42, 0.68);
+        box-shadow: 0 18px 54px rgba(0,0,0,0.24);
+        backdrop-filter: blur(20px) saturate(160%);
+        -webkit-backdrop-filter: blur(20px) saturate(160%);
         margin: 0.35rem 0 1rem;
     }}
     table.glass-table {{ width: 100%; border-collapse: collapse; font-size: 0.84rem; }}
@@ -427,26 +585,41 @@ st.markdown(
         position: sticky;
         top: 0;
         z-index: 1;
-        background: rgba(245,249,255,0.96);
-        color: #41536B;
+        background: rgba(7, 18, 34, 0.98);
+        color: var(--cyan);
         text-align: left;
         text-transform: uppercase;
         letter-spacing: 0.07em;
         font-size: 0.68rem;
         padding: 0.72rem 0.82rem;
-        border-bottom: 1px solid rgba(16,32,51,0.08);
+        border-bottom: 1px solid rgba(170, 214, 255, 0.18);
         white-space: nowrap;
     }}
     table.glass-table td {{
         padding: 0.68rem 0.82rem;
-        border-bottom: 1px solid rgba(16,32,51,0.06);
+        border-bottom: 1px solid rgba(170, 214, 255, 0.10);
         color: var(--ink);
         white-space: nowrap;
     }}
-    table.glass-table tr:nth-child(even) td {{ background: rgba(255,255,255,0.42); }}
+    table.glass-table tr:nth-child(even) td {{ background: rgba(221, 247, 255, 0.045); }}
+    div[data-testid="stTabs"] [role="tablist"] {{
+        border-bottom: 1px solid var(--line);
+        gap: 0.4rem;
+    }}
+    div[data-testid="stTabs"] [role="tab"] {{
+        color: var(--muted);
+        border-radius: 999px 999px 0 0;
+        padding: 0.85rem 1rem;
+    }}
+    div[data-testid="stTabs"] [aria-selected="true"] {{
+        color: var(--ink);
+        background: rgba(221, 247, 255, 0.08);
+    }}
     [data-testid="stExpander"] {{
         border-radius: 16px;
         overflow: hidden;
+        border: 1px solid rgba(170, 214, 255, 0.16);
+        background: rgba(8, 23, 42, 0.46);
     }}
     [data-testid="stExpander"] details > summary {{
         display: flex;
@@ -468,11 +641,23 @@ st.markdown(
     [data-testid="stExpander"] details[open] > summary > span:first-child::after {{
         content: "▾";
     }}
+    [data-testid="stExpander"] details > summary > span:first-child::after {{
+        content: ">";
+        color: var(--cyan);
+    }}
+    [data-testid="stExpander"] details[open] > summary > span:first-child::after {{
+        content: "v";
+    }}
     [data-testid="stDataFrame"], [data-testid="stDataEditor"] {{
         border-radius: 22px;
         overflow: hidden;
-        border: 1px solid rgba(255,255,255,0.72);
-        box-shadow: 0 16px 40px rgba(21,54,93,0.09);
+        border: 1px solid rgba(170, 214, 255, 0.16);
+        box-shadow: 0 18px 54px rgba(0,0,0,0.24);
+    }}
+    .stAlert {{
+        background: rgba(8, 23, 42, 0.74);
+        border: 1px solid rgba(248, 193, 74, 0.28);
+        color: var(--ink);
     }}
     @media (max-width: 760px) {{
         .coverage {{ display: none; }}
@@ -883,17 +1068,28 @@ def score_progression_figure(result: dict) -> go.Figure:
         height=430,
         margin={"l": 10, "r": 10, "t": 20, "b": 10},
         paper_bgcolor="rgba(0,0,0,0)",
-        plot_bgcolor=COLORS["panel"],
-        font={"color": COLORS["ink"], "family": "Segoe UI, Inter, sans-serif"},
+        plot_bgcolor="rgba(8, 23, 42, 0.72)",
+        font={
+            "color": COLORS["ink"],
+            "family": "Inter, SF Pro Display, Segoe UI, sans-serif",
+        },
         legend={"orientation": "h", "y": 1.08, "x": 0},
         xaxis={
             "title": "Overs",
             "range": [0, 20],
             "gridcolor": COLORS["line"],
             "zeroline": False,
+            "linecolor": COLORS["line"],
+            "tickcolor": COLORS["line"],
         },
-        yaxis={"title": "Runs", "gridcolor": COLORS["line"], "zeroline": False},
-        hoverlabel={"bgcolor": COLORS["ink"], "font_color": "white"},
+        yaxis={
+            "title": "Runs",
+            "gridcolor": COLORS["line"],
+            "zeroline": False,
+            "linecolor": COLORS["line"],
+            "tickcolor": COLORS["line"],
+        },
+        hoverlabel={"bgcolor": "#020817", "font_color": "white"},
     )
     return figure
 
@@ -916,7 +1112,7 @@ def probability_figure(distribution: pd.DataFrame, result: dict) -> go.Figure:
                     "color": palette.get(str(winner), COLORS["muted"]),
                     "size": 11,
                     "opacity": 0.78,
-                    "line": {"color": COLORS["panel"], "width": 1},
+                    "line": {"color": "rgba(221,247,255,0.32)", "width": 1},
                 },
                 customdata=np.column_stack([group["sim"], group["seed"]]),
                 hovertemplate=(
@@ -951,14 +1147,19 @@ def probability_figure(distribution: pd.DataFrame, result: dict) -> go.Figure:
         height=440,
         margin={"l": 10, "r": 10, "t": 20, "b": 10},
         paper_bgcolor="rgba(0,0,0,0)",
-        plot_bgcolor=COLORS["panel"],
-        font={"color": COLORS["ink"], "family": "Segoe UI, Inter, sans-serif"},
+        plot_bgcolor="rgba(8, 23, 42, 0.72)",
+        font={
+            "color": COLORS["ink"],
+            "family": "Inter, SF Pro Display, Segoe UI, sans-serif",
+        },
         legend={"orientation": "h", "y": 1.08, "x": 0},
         xaxis={
             "title": f"{result['first']['team']} runs (batting first)",
             "gridcolor": COLORS["line"],
             "zeroline": False,
             "range": [lower, upper],
+            "linecolor": COLORS["line"],
+            "tickcolor": COLORS["line"],
         },
         yaxis={
             "title": f"{result['second']['team']} runs (chasing)",
@@ -967,7 +1168,10 @@ def probability_figure(distribution: pd.DataFrame, result: dict) -> go.Figure:
             "range": [lower, upper],
             "scaleanchor": "x",
             "scaleratio": 1,
+            "linecolor": COLORS["line"],
+            "tickcolor": COLORS["line"],
         },
+        hoverlabel={"bgcolor": "#020817", "font_color": "white"},
     )
     return figure
 
@@ -999,13 +1203,13 @@ def render_header() -> None:
                     <span></span><span></span><span></span>
                 </div>
                 <div>
-                    <div class="brand-name">CricPred</div>
-                    <div class="brand-sub">IPL ML Simulator</div>
+                    <div class="brand-name">CricPredAI</div>
+                    <div class="brand-sub">IPL simulation laboratory</div>
                 </div>
             </div>
             <div class="coverage">
-                Created by <strong>Annay De</strong><br>
-                IPL ball-by ball data (18 Apr 2008 - 1 May 2026)
+                288,051 ball-by-ball events<br>
+                Calibrated IPL archive, 2008-2026
             </div>
         </div>
         """,
@@ -1017,12 +1221,12 @@ def render_match_lab() -> None:
     st.markdown(
         """
         <div class="hero">
-            <div class="eyebrow">models Trained on historical data</div>
-            <h1>Build two teams, choose a stadium, simulate it a hundred times.</h1>
+            <div class="eyebrow">Role-aware match intelligence</div>
+            <h1>Pressure-test IPL elevens before the first ball is bowled.</h1>
             <div class="hero-copy">
-                A ball-by-ball IPL simulator trained on 288,051 deliveries.
-                Select a data profile, set the batting order through the toss,
-                and compare one match with a repeated-match distribution, calculated by different Machine Learning Models.
+                A ball-by-ball simulator trained on 288,051 IPL deliveries.
+                Set batting positions, nominate the bowling pool, choose the venue,
+                and compare a representative scorecard against the full outcome distribution.
             </div>
         </div>
         """,
@@ -1707,11 +1911,17 @@ else:
 st.markdown(
     """
     <div class="footer">
-        <div>CricPred | IPL simulation laboratory</div>
-        <div>
-            Built by <strong>Annay De</strong>|
-            <a href="https://www.linkedin.com/in/annayde/" target="_blank" rel="noopener noreferrer">LinkedIn</a> |
-            <a href="https://x.com/AnnayDe_" target="_blank" rel="noopener noreferrer">X</a>
+        <div>CricPredAI | IPL simulation laboratory</div>
+        <div class="footer-meta">
+            <span>Built by <strong>Annay De</strong></span>
+            <span class="social-links" aria-label="Annay De social links">
+                <a class="social-link linkedin" href="https://www.linkedin.com/in/annayde/" target="_blank" rel="noopener noreferrer" aria-label="Annay De on LinkedIn">
+                    <span class="social-glyph">in</span>
+                </a>
+                <a class="social-link" href="https://x.com/AnnayDe_" target="_blank" rel="noopener noreferrer" aria-label="Annay De on X">
+                    <span class="social-glyph">X</span>
+                </a>
+            </span>
         </div>
     </div>
     """,

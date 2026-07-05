@@ -9,9 +9,9 @@ enableWebsocketCompression = true
 gatherUsageStats = false
 
 [theme]
-base = "light"
-primaryColor = "#174A7E"
-backgroundColor = "#F4F1E8"
-secondaryBackgroundColor = "#FBF9F3"
-textColor = "#101D2F"
+base = "dark"
+primaryColor = "#38BDF8"
+backgroundColor = "#020817"
+secondaryBackgroundColor = "#08172A"
+textColor = "#F7FBFF"
 font = "sans serif"
