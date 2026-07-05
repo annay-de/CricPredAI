@@ -16,7 +16,7 @@ from simulator import (
     simulate_distribution,
     simulate_match,
 )
-from theme import APP_CSS, PALETTE, hero_particles
+from theme import APP_CSS, PALETTE, pitch_constellation
 
 st.set_page_config(
     page_title="CricPredAI — IPL Simulation Desk",
@@ -27,7 +27,7 @@ st.set_page_config(
 
 st.markdown(APP_CSS, unsafe_allow_html=True)
 
-MONO_FONT = "Martian Mono, IBM Plex Mono, ui-monospace, monospace"
+MONO_FONT = "JetBrains Mono, ui-monospace, monospace"
 
 PROFILE_LABELS = {
     "modern": "Modern form",
@@ -153,7 +153,7 @@ def chart_layout(figure: go.Figure, height: int = 420) -> go.Figure:
             "font": {"color": PALETTE["ink"]},
         },
         hoverlabel={
-            "bgcolor": "#101012",
+            "bgcolor": "#000000",
             "bordercolor": PALETTE["line"],
             "font": {"color": PALETTE["ink"], "family": MONO_FONT},
         },
@@ -441,7 +441,7 @@ def probability_figure(distribution: pd.DataFrame, result: dict) -> go.Figure:
                     "size": 8,
                     "opacity": 0.85,
                     "symbol": "circle",
-                    "line": {"color": "rgba(7,7,8,0.7)", "width": 1},
+                    "line": {"color": "rgba(0,0,0,0.7)", "width": 1},
                 },
                 customdata=np.column_stack([group["sim"], group["seed"]]),
                 hovertemplate=(
@@ -506,9 +506,9 @@ def render_masthead() -> None:
 def render_match_lab() -> None:
     st.markdown(
         '<div class="hero">'
-        + hero_particles()
-        + '<div class="eyebrow">Role-aware match intelligence</div>'
-        '<div class="h1">Every eleven you pick<br>is a <em>thousand matches</em><br>waiting to happen.</div>'
+        + pitch_constellation()
+        + '<div class="eyebrow">role-aware · ball-by-ball · 2008–2026</div>'
+        '<div class="h1">Every ball,<br>priced.</div>'
         '<div class="copy">A ball-by-ball probabilistic engine trained on every IPL '
         "delivery ever bowled. Set the batting order, nominate the attack, choose "
         "the ground — then watch one match play out, and see the full distribution "
@@ -812,9 +812,9 @@ def render_results() -> None:
     if not run:
         st.markdown(
             '<div class="hero">'
-            + hero_particles()
-            + '<div class="eyebrow">Match day</div>'
-            '<div class="h1">The ground is ready.<br><em>Nobody is batting yet.</em></div>'
+            + pitch_constellation()
+            + '<div class="eyebrow">match day · no simulation loaded</div>'
+            '<div class="h1">The ground is ready.<br>Nobody is batting yet.</div>'
             '<div class="copy">Build two elevens in the Match Lab, pick your ground '
             "and your evidence profile, and simulate the game. It replays here ball "
             "by ball — scorecard, worm, commentary, and the full distribution of "
@@ -855,8 +855,8 @@ def render_results() -> None:
         '<div><div class="vk">This scorecard</div>'
         f'<div class="vh"><em>{escape(result["winner"])}</em> {win_verb} {escape(result["margin"])}</div></div>'
         '<div style="margin-left:auto;text-align:right">'
-        f'<div class="vk">Across {len(distribution)} simulations</div>'
-        f'<div class="vh">{escape(favourite)} {100 * max(p_first, p_second):.0f}%</div></div>'
+        f'<div class="vk">P(win) across {len(distribution)} simulations</div>'
+        f'<div class="vp"><small>{escape(favourite)}</small>{100 * max(p_first, p_second):.1f}%</div></div>'
         "</div>"
         '<div class="tug"><div class="tugbar">'
         f'<div class="a" style="width:{100 * p_first:.1f}%"></div>'
@@ -1018,9 +1018,9 @@ def render_results() -> None:
 def render_model_notes() -> None:
     st.markdown(
         '<div class="hero">'
-        + hero_particles()
-        + '<div class="eyebrow">Under the hood</div>'
-        '<div class="h1">One engine,<br><em>every era.</em></div>'
+        + pitch_constellation()
+        + '<div class="eyebrow">under the hood · two evidence profiles</div>'
+        '<div class="h1">One engine,<br>every era.</div>'
         '<div class="copy">Modern mode emphasises current IPL form through recency '
         "weighting. Lifetime mode keeps the full career record intact for legends "
         "and cross-era matchups. Both share the same leakage-safe delivery state "
@@ -1174,18 +1174,29 @@ elif navigation == "Match Day":
 else:
     render_model_notes()
 
+@st.cache_resource(show_spinner=False)
+def logo_data_uri(path: str, size: int = 30) -> str:
+    import base64
+    import io
+
+    from PIL import Image
+
+    image = Image.open(path).convert("RGBA")
+    image.thumbnail((size * 2, size * 2), Image.LANCZOS)
+    buffer = io.BytesIO()
+    image.save(buffer, format="PNG")
+    return "data:image/png;base64," + base64.b64encode(buffer.getvalue()).decode()
+
+
+linkedin_logo = logo_data_uri("assets/linkedin_icon.png")
+x_logo = logo_data_uri("assets/x_icon.webp")
+
 st.markdown(
-    """
-    <div class="footer">
-        <div>CricPredAI — IPL simulation desk · every match here is synthetic</div>
-        <div>
-            Built by <b>Annay De</b>
-            <span class="social">
-                <a href="https://www.linkedin.com/in/annayde/" target="_blank" rel="noopener noreferrer">LinkedIn</a>
-                <a href="https://x.com/AnnayDe_" target="_blank" rel="noopener noreferrer">X</a>
-            </span>
-        </div>
-    </div>
-    """,
+    '<div class="footer">'
+    '<div class="stamp">cricpredai · trained on 288,051 deliveries · 2008–2026 · every match here is synthetic</div>'
+    '<div class="who">Built by <b>Annay De</b>'
+    f'<a class="applogo" href="https://www.linkedin.com/in/annayde/" target="_blank" rel="noopener noreferrer" aria-label="Annay De on LinkedIn"><img src="{linkedin_logo}" alt="LinkedIn"></a>'
+    f'<a class="applogo" href="https://x.com/AnnayDe_" target="_blank" rel="noopener noreferrer" aria-label="Annay De on X"><img src="{x_logo}" alt="X"></a>'
+    "</div></div>",
     unsafe_allow_html=True,
 )

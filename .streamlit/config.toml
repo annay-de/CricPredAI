@@ -10,24 +10,24 @@ gatherUsageStats = false
 
 [theme]
 base = "dark"
-primaryColor = "#1954EC"
-backgroundColor = "#070708"
-secondaryBackgroundColor = "#101012"
-textColor = "#FFFFFF"
+primaryColor = "#4DA3FF"
+backgroundColor = "#000000"
+secondaryBackgroundColor = "#101113"
+textColor = "#F0F0F0"
 font = "sans serif"
 
-# The app is designed for one look only: midnight. Pin the same palette
+# The app is designed for one look only: night match. Pin the same palette
 # for both variants so system light mode cannot flip widgets to white.
 [theme.light]
-primaryColor = "#1954EC"
-backgroundColor = "#070708"
-secondaryBackgroundColor = "#101012"
-textColor = "#FFFFFF"
+primaryColor = "#4DA3FF"
+backgroundColor = "#000000"
+secondaryBackgroundColor = "#101113"
+textColor = "#F0F0F0"
 font = "sans serif"
 
 [theme.dark]
-primaryColor = "#1954EC"
-backgroundColor = "#070708"
-secondaryBackgroundColor = "#101012"
-textColor = "#FFFFFF"
+primaryColor = "#4DA3FF"
+backgroundColor = "#000000"
+secondaryBackgroundColor = "#101113"
+textColor = "#F0F0F0"
 font = "sans serif"
