@@ -17,6 +17,17 @@ from simulator import (
     simulate_match,
 )
 from particles import particles_html
+from scout import (
+    ScoutError,
+    career_summary,
+    fetch_t20_career,
+    load_roster,
+    merge_into_meta,
+    profile_from_career,
+    profile_from_statsguru,
+    save_roster,
+    search_players,
+)
 from theme import APP_CSS, PALETTE
 
 st.set_page_config(
@@ -824,13 +835,18 @@ def render_results() -> None:
         )
         return
 
+    render_run(run)
+
+
+def render_run(run: dict, key_prefix: str = "", section_start: int = 1) -> None:
     result = run["result"]
     distribution = run["distribution"]
     config = run["config"]
     profile_label = PROFILE_LABELS.get(config["profile"], config["profile"])
     model_label = MODEL_LABELS.get(config["model"], config["model"])
+    s1, s2 = f"{section_start:02d}", f"{section_start + 1:02d}"
 
-    section("01", "The broadcast", "Press play — or scrub straight to the result")
+    section(s1, "The broadcast", "Press play — or scrub straight to the result")
     payload = build_payload(result, config.get("xi", {}), config["venue"])
     components.html(build_replay_html(payload), height=680, scrolling=False)
     st.caption(
@@ -839,7 +855,7 @@ def render_results() -> None:
         "of the most common outcome across the repeated runs."
     )
 
-    section("02", "The verdict", f"{config['simulations']} matches, same teams, same night")
+    section(s2, "The verdict", f"{config['simulations']} matches, same teams, same night")
     winner_rates = distribution["winner"].value_counts(normalize=True)
     team_first = result["first"]["team"]
     team_second = result["second"]["team"]
@@ -967,7 +983,7 @@ def render_results() -> None:
             "Innings",
             [result["first"]["team"], result["second"]["team"]],
             horizontal=True,
-            key="delivery_innings",
+            key=f"{key_prefix}delivery_innings",
         )
         innings = (
             result["first"]
@@ -1150,6 +1166,300 @@ def render_model_notes() -> None:
     )
 
 
+
+# ---------------------------------------------------------------------------
+# the scout — universal players, separate from the IPL pipeline
+# ---------------------------------------------------------------------------
+
+def scout_roster() -> dict:
+    if "scout_roster" not in st.session_state:
+        st.session_state["scout_roster"] = load_roster()
+    return st.session_state["scout_roster"]
+
+
+def sign_scout_player(name: str, profile: dict, career: dict | None, source: str) -> None:
+    roster = scout_roster()
+    roster[name] = {"profile": profile, "career": career or {}, "source": source}
+    save_roster(roster)
+    st.session_state["scout_signed_message"] = f"{name} signed to the scouted pool."
+
+
+BOWLER_TYPE_LABELS = {"pace": "Pace", "spin": "Spin", "none": "Doesn't bowl"}
+
+
+def scout_profile_controls(prefix: str) -> tuple[int, str, float]:
+    columns = st.columns([1, 1.4, 1.4])
+    with columns[0]:
+        position = st.number_input(
+            "Preferred position", min_value=1, max_value=11, value=4,
+            key=f"{prefix}_pos",
+        )
+    with columns[1]:
+        bowler_type = st.radio(
+            "Bowler type", ["pace", "spin", "none"],
+            format_func=lambda v: BOWLER_TYPE_LABELS[v],
+            horizontal=True, index=2, key=f"{prefix}_type",
+        )
+    with columns[2]:
+        trust = st.slider(
+            "Evidence trust", min_value=0.1, max_value=1.0, value=0.5, step=0.05,
+            key=f"{prefix}_trust",
+            help=(
+                "How much the career record counts against IPL-grade evidence. "
+                "Lower trust shrinks the player harder toward the league average."
+            ),
+        )
+    return int(position), bowler_type, float(trust)
+
+
+def render_scout() -> None:
+    st.markdown(
+        '<div class="hero">'
+        '<div class="eyebrow">The Scout · any player with a public record</div>'
+        '<div class="h1" style="font-size:clamp(44px,5.4vw,78px);letter-spacing:-0.04em">'
+        "Anyone who ever<br>played the game.</div>"
+        '<div class="copy">Search a name, pull the career T20 record, and the '
+        "Scout converts it into a calibrated engine profile using the same "
+        "Bayesian shrinkage the IPL pipeline trains with. Scouted players can "
+        "face anyone — including players they never actually met. The IPL "
+        "archive itself is never modified.</div></div>",
+        unsafe_allow_html=True,
+    )
+
+    meta, _, models = cached_artifacts("modern")
+    roster = scout_roster()
+
+    signed_message = st.session_state.pop("scout_signed_message", None)
+    if signed_message:
+        st.success(signed_message)
+
+    section("01", "Find a player", "ESPNcricinfo search · Statsguru career record")
+    search_columns = st.columns([2, 1])
+    with search_columns[0]:
+        query = st.text_input("Player name", key="sc_query", placeholder="e.g. Babar Azam, Jos Buttler, Rachin Ravindra")
+    with search_columns[1]:
+        st.markdown("<div style='height:29px'></div>", unsafe_allow_html=True)
+        if st.button("Search", key="sc_search", width="stretch") and query:
+            try:
+                st.session_state["sc_results"] = search_players(query)
+                st.session_state.pop("sc_career", None)
+            except ScoutError as exc:
+                st.session_state.pop("sc_results", None)
+                st.warning(str(exc))
+
+    results = st.session_state.get("sc_results") or []
+    if results:
+        labels = {
+            f"{r['name']}" + (f" — {r['country']}" if r.get("country") else ""): r
+            for r in results
+        }
+        pick_columns = st.columns([2, 1])
+        with pick_columns[0]:
+            chosen_label = st.selectbox("Search results", list(labels), key="sc_pick")
+        with pick_columns[1]:
+            st.markdown("<div style='height:29px'></div>", unsafe_allow_html=True)
+            if st.button("Fetch T20 record", key="sc_fetch", width="stretch"):
+                chosen = labels[chosen_label]
+                try:
+                    with st.spinner("Reading Statsguru career record..."):
+                        st.session_state["sc_career"] = fetch_t20_career(chosen["id"])
+                    st.session_state["sc_career_name"] = chosen["name"]
+                except ScoutError as exc:
+                    st.session_state.pop("sc_career", None)
+                    st.warning(str(exc))
+
+    career = st.session_state.get("sc_career")
+    if career:
+        career_name = st.session_state.get("sc_career_name", "Player")
+        st.caption(f"{career_name}: {career_summary(career)}")
+        position, bowler_type, trust = scout_profile_controls("sc_fetched")
+        if st.button(f"Sign {career_name} to the pool", key="sc_sign"):
+            profile = profile_from_statsguru(
+                name=career_name, meta=meta, career=career,
+                preferred_position=position, bowler_type=bowler_type, trust=trust,
+            )
+            sign_scout_player(career_name, profile, career, "espncricinfo")
+            st.session_state.pop("sc_career", None)
+            st.rerun()
+
+    with st.expander("Add a player manually — when the scrape can't reach them"):
+        manual_name = st.text_input("Name", key="scm_name")
+        stat_columns = st.columns(4)
+        with stat_columns[0]:
+            m_innings = st.number_input("Bat innings", 0, 1000, 0, key="scm_inns")
+        with stat_columns[1]:
+            m_runs = st.number_input("Runs", 0, 30000, 0, key="scm_runs")
+        with stat_columns[2]:
+            m_balls = st.number_input("Balls faced", 0, 30000, 0, key="scm_bf")
+        with stat_columns[3]:
+            m_outs = st.number_input("Dismissals", 0, 1000, 0, key="scm_outs")
+        bowl_columns = st.columns(3)
+        with bowl_columns[0]:
+            m_bballs = st.number_input("Balls bowled", 0, 30000, 0, key="scm_bb")
+        with bowl_columns[1]:
+            m_bruns = st.number_input("Runs conceded", 0, 40000, 0, key="scm_br")
+        with bowl_columns[2]:
+            m_wkts = st.number_input("Wickets", 0, 1000, 0, key="scm_bw")
+        m_position, m_type, m_trust = scout_profile_controls("sc_manual")
+        can_sign = bool(manual_name.strip()) and (m_balls > 0 or m_bballs > 0)
+        if st.button("Sign manual player", key="scm_sign", disabled=not can_sign):
+            profile = profile_from_career(
+                name=manual_name.strip(), meta=meta,
+                bat_innings=m_innings, bat_runs=m_runs, bat_balls=m_balls, bat_outs=m_outs,
+                bowl_balls=m_bballs, bowl_runs=m_bruns, bowl_wickets=m_wkts,
+                preferred_position=m_position, bowler_type=m_type, trust=m_trust,
+            )
+            sign_scout_player(manual_name.strip(), profile, None, "manual")
+            st.rerun()
+
+    if roster:
+        section("02", "The signed", f"{len(roster)} scouted — usable below alongside the full IPL pool")
+        for player_name in sorted(roster):
+            profile = roster[player_name]["profile"]
+            row = st.columns([2.4, 3, 0.8])
+            row[0].markdown(f"#### {escape(player_name)}")
+            row[1].caption(
+                f"{profile['role']} · bat {profile['bat_runs_per_ball']:.3f} rpb · "
+                f"out {profile['dismissal_rate']:.4f} · bowl {profile['bowl_runs_per_ball']:.3f} rpb · "
+                f"wkt {profile['wicket_rate']:.4f}"
+            )
+            if row[2].button("Release", key=f"sc_rel_{player_name}"):
+                roster.pop(player_name, None)
+                save_roster(roster)
+                st.rerun()
+
+    merged_meta = merge_into_meta(meta, roster)
+    pool = merged_meta.get("players", meta.get("players", []))
+
+    section("03", "Scout matchup", "Scouted and IPL players, any combination")
+    if not roster:
+        st.caption(
+            "The full IPL pool is available now; sign scouted players above to "
+            "drop them into these elevens."
+        )
+    name_columns = st.columns(2)
+    with name_columns[0]:
+        team_a = st.text_input("Team A", "World XI", key="sc_team_a").strip()
+    with name_columns[1]:
+        team_b = st.text_input("Team B", "Rest of the World", key="sc_team_b").strip()
+
+    default_a, default_b = profile_presets("modern", pool)
+    lineup_columns = st.columns(2)
+    with lineup_columns[0]:
+        st.markdown(f"#### {escape(team_a or 'Team A')} — batting order")
+        xi_a = ordered_lineup_editor("Player", pool, default_a, key="sc_xi_a")
+    with lineup_columns[1]:
+        st.markdown(f"#### {escape(team_b or 'Team B')} — batting order")
+        xi_b = ordered_lineup_editor("Player", pool, default_b, key="sc_xi_b")
+
+    bowling_columns = st.columns(2)
+    with bowling_columns[0]:
+        bowling_a = st.multiselect(
+            f"{team_a or 'Team A'} bowling options",
+            list(dict.fromkeys(xi_a)),
+            default=recommended_bowlers(xi_a, merged_meta),
+            key="sc_bowl_a",
+        )
+        st.markdown(
+            f'<div class="lineup-meta">{lineup_summary(xi_a, merged_meta, bowling_a)}</div>',
+            unsafe_allow_html=True,
+        )
+    with bowling_columns[1]:
+        bowling_b = st.multiselect(
+            f"{team_b or 'Team B'} bowling options",
+            list(dict.fromkeys(xi_b)),
+            default=recommended_bowlers(xi_b, merged_meta),
+            key="sc_bowl_b",
+        )
+        st.markdown(
+            f'<div class="lineup-meta">{lineup_summary(xi_b, merged_meta, bowling_b)}</div>',
+            unsafe_allow_html=True,
+        )
+
+    condition_columns = st.columns([1.4, 1, 1, 1])
+    with condition_columns[0]:
+        venues = merged_meta.get("venues", [])
+        venue = st.selectbox(
+            "Venue", venues,
+            index=venues.index("Eden Gardens") if "Eden Gardens" in venues else 0,
+            key="sc_venue",
+        )
+    with condition_columns[1]:
+        toss_winner = st.selectbox("Toss winner", [team_a or "Team A", team_b or "Team B"], key="sc_toss_w")
+    with condition_columns[2]:
+        toss_decision = st.selectbox(
+            "Toss decision", ["bat", "field"],
+            format_func=lambda v: "Bat first" if v == "bat" else "Field first",
+            key="sc_toss_d",
+        )
+    with condition_columns[3]:
+        simulations = st.slider("Simulations", 10, 100, 50, 5, key="sc_sims")
+
+    overlap = sorted(set(xi_a) & set(xi_b))
+    problems = []
+    if len(xi_a) != 11 or len(xi_b) != 11:
+        problems.append("Fill all 11 batting positions for each team.")
+    if len(set(xi_a)) != len(xi_a) or len(set(xi_b)) != len(xi_b):
+        problems.append("A player can appear only once in a batting order.")
+    if overlap:
+        problems.append(f"A player cannot represent both teams: {', '.join(overlap)}.")
+    if len(bowling_a) < 5 or len(bowling_b) < 5:
+        problems.append("Nominate at least five bowling options for each team.")
+    if not team_a or not team_b or team_a == team_b:
+        problems.append("Use two distinct team names.")
+    if problems:
+        st.warning(" ".join(problems))
+
+    if st.button(
+        "Simulate scout match", type="primary", width="stretch",
+        disabled=bool(problems), key="sc_run",
+    ):
+        with st.spinner(
+            f"Bowling {simulations} full matches with scouted profiles blended "
+            "into modern-form evidence..."
+        ):
+            distribution = simulate_distribution(
+                simulations, team_a, team_b, xi_a, xi_b, models, merged_meta,
+                "xgboost", venue, "data-driven", "data-driven",
+                toss_winner, toss_decision, seed=1017,
+                bowlers1=bowling_a, bowlers2=bowling_b,
+            )
+            scorecard_seed = representative_seed(distribution)
+            result = simulate_match(
+                team_a, team_b, xi_a, xi_b, models, merged_meta,
+                "xgboost", venue, "data-driven", "data-driven",
+                toss_winner, toss_decision, seed=scorecard_seed,
+                commentary=False, bowlers1=bowling_a, bowlers2=bowling_b,
+            )
+        st.session_state["scout_run"] = {
+            "result": result,
+            "distribution": distribution,
+            "config": {
+                "profile": "modern",
+                "model": "xgboost",
+                "venue": venue,
+                "simulations": simulations,
+                "seed": 17,
+                "scorecard_seed": scorecard_seed,
+                "toss_winner": toss_winner,
+                "toss_decision": toss_decision,
+                "bowling_a": bowling_a,
+                "bowling_b": bowling_b,
+                "xi": {team_a: xi_a, team_b: xi_b},
+            },
+        }
+        st.rerun()
+
+    scout_run = st.session_state.get("scout_run")
+    if scout_run:
+        render_run(scout_run, key_prefix="sc_", section_start=4)
+    st.caption(
+        "Scouted profiles are session evidence, not retrained models: career "
+        "aggregates are shrunk toward the IPL baseline with the training "
+        "pipeline's own constants, and the trained artifacts are untouched."
+    )
+
+
 # ---------------------------------------------------------------------------
 # shell
 # ---------------------------------------------------------------------------
@@ -1161,7 +1471,7 @@ if "pending_nav" in st.session_state:
 
 navigation = st.radio(
     "Primary navigation",
-    ["Match Lab", "Match Day", "The Engine"],
+    ["Match Lab", "Match Day", "The Scout", "The Engine"],
     horizontal=True,
     label_visibility="collapsed",
     key="primary_nav",
@@ -1171,6 +1481,8 @@ if navigation == "Match Lab":
     render_match_lab()
 elif navigation == "Match Day":
     render_results()
+elif navigation == "The Scout":
+    render_scout()
 else:
     render_model_notes()
 
