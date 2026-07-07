@@ -72,9 +72,14 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--profiles",
         nargs="+",
-        choices=["modern", "lifetime"],
+        choices=["modern", "lifetime", "world"],
         default=["modern", "lifetime"],
-        help="Artifact profiles to train. Modern uses recency weighting; lifetime uses equal weights.",
+        help=(
+            "Artifact profiles to train. Modern uses recency weighting; "
+            "lifetime uses equal weights; world is an equal-weight profile "
+            "intended for a multi-league Cricsheet corpus "
+            "(see cricsheet_ingest.py)."
+        ),
     )
     return parser.parse_args()
 
@@ -854,6 +859,8 @@ def train_profile(
             "profile_description": (
                 "Recency-weighted modern IPL form with a five-year half-life."
                 if profile == "modern"
+                else "Equal-weight multi-league world evidence across every ingested competition."
+                if profile == "world"
                 else "Equal-weight lifetime IPL history for legends and cross-era simulations."
             ),
             "features": FEATURES,
@@ -877,7 +884,7 @@ def train_profile(
             "test_rows": int(len(test)),
             "leakage_safe_pre_delivery_features": True,
             "recency_weight_half_life_years": 5.0 if profile == "modern" else None,
-            "equal_weight_lifetime_data": profile == "lifetime",
+            "equal_weight_lifetime_data": profile in ("lifetime", "world"),
             "matchup_adjustment_strength": 1.0,
             "batting_position_adjustment_strength": 1.0,
             "bowling_phase_selection_strength": 1.0,

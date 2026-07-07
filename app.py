@@ -44,6 +44,7 @@ MONO_FONT = "JetBrains Mono, ui-monospace, monospace"
 PROFILE_LABELS = {
     "modern": "Modern form",
     "lifetime": "Lifetime / legends",
+    "world": "World / all leagues",
 }
 
 PROFILE_DESCRIPTIONS = {
@@ -54,6 +55,11 @@ PROFILE_DESCRIPTIONS = {
     "lifetime": (
         "Every IPL delivery carries equal weight. Best for legends, all-time XIs, "
         "and cross-era matchups."
+    ),
+    "world": (
+        "Delivery-level evidence from every ingested league — IPL, PSL, BBL, CPL, "
+        "T20 internationals and more — with equal weight. Train it with "
+        "cricsheet_ingest.py; the Scout uses it automatically once present."
     ),
 }
 
@@ -1226,7 +1232,8 @@ def render_scout() -> None:
         unsafe_allow_html=True,
     )
 
-    meta, _, models = cached_artifacts("modern")
+    scout_profile = "world" if "world" in available_profiles() else "modern"
+    meta, _, models = cached_artifacts(scout_profile)
     roster = scout_roster()
 
     signed_message = st.session_state.pop("scout_signed_message", None)
@@ -1332,11 +1339,14 @@ def render_scout() -> None:
     pool = merged_meta.get("players", meta.get("players", []))
 
     section("03", "Scout matchup", "Scouted and IPL players, any combination")
-    if not roster:
-        st.caption(
-            "The full IPL pool is available now; sign scouted players above to "
-            "drop them into these elevens."
+    st.caption(
+        f"Evidence profile: {PROFILE_LABELS.get(scout_profile, scout_profile)}. "
+        + (
+            "Sign scouted players above to drop them into these elevens."
+            if not roster
+            else "Scouted and trained players share one pool below."
         )
+    )
     name_columns = st.columns(2)
     with name_columns[0]:
         team_a = st.text_input("Team A", "World XI", key="sc_team_a").strip()
@@ -1415,8 +1425,8 @@ def render_scout() -> None:
         disabled=bool(problems), key="sc_run",
     ):
         with st.spinner(
-            f"Bowling {simulations} full matches with scouted profiles blended "
-            "into modern-form evidence..."
+            f"Bowling {simulations} full matches on "
+            f"{PROFILE_LABELS.get(scout_profile, scout_profile).lower()} evidence..."
         ):
             distribution = simulate_distribution(
                 simulations, team_a, team_b, xi_a, xi_b, models, merged_meta,
@@ -1435,7 +1445,7 @@ def render_scout() -> None:
             "result": result,
             "distribution": distribution,
             "config": {
-                "profile": "modern",
+                "profile": scout_profile,
                 "model": "xgboost",
                 "venue": venue,
                 "simulations": simulations,

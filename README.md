@@ -125,6 +125,25 @@ delivery equal weight and is intended for legends and cross-era matches.
 Both profiles have their own XGBoost/logistic models, empirical priors,
 calibration settings, and player metadata under `artifacts/profiles/`.
 
+## World profile — every league, delivery by delivery
+
+The Scout section signs any player from career aggregates. To give those
+players (and every other non-IPL cricketer) real delivery-level history in
+the trained models, build the multi-league corpus from Cricsheet's open
+ball-by-ball archives and train the `world` profile:
+
+```bash
+python cricsheet_ingest.py --leagues ipl psl bbl cpl t20s --output Data/world_dataset.csv
+python train_models.py --data Data/world_dataset.csv --profiles world
+python validate_simulator.py --data Data/world_dataset.csv --profile world
+```
+
+Any Cricsheet competition slug works (`bpl`, `lpl`, `sat`, `ssm`, `mlc`,
+`ilt`, `ntb`, ...). The app discovers `artifacts/profiles/world/`
+automatically: it appears in the Evidence selector, and The Scout switches
+to it as its base evidence. Run this where cricsheet.org is reachable and
+commit the produced `artifacts/profiles/world/` directory to deploy it.
+
 ## Data
 
 See `Data/README.md` for the exact Kaggle source, current date coverage, and
