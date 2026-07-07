@@ -53,22 +53,47 @@ function pickColor(){
 }
 
 /* ---------- silhouettes ---------- */
-/* bat: blade + handle, straight-on (200x400 space) */
-const BAT_D = "M93 10 Q93 3 100 3 Q107 3 107 10 L107 120 L148 133 L148 356 Q148 385 100 386 Q52 385 52 356 L52 133 L93 120 Z";
-/* batsman, lofted-drive follow-through (400x420 space):
-   head + torso/legs + arms + bat as subpaths */
-const MAN_D = [
-  /* head */
-  "M150 52 m -24 0 a 24 24 0 1 0 48 0 a 24 24 0 1 0 -48 0",
-  /* torso + legs */
-  "M160 78 C182 84 196 96 198 118 L200 198 C214 220 240 244 258 272 L282 348 L308 352 L302 368 L264 370 L238 292 L202 244 L186 238 C176 254 162 266 154 278 L134 352 L106 350 L100 366 L142 370 L166 286 L150 212 L140 132 C140 106 146 86 160 78 Z",
-  /* arms */
-  "M170 100 L252 62 L266 78 L192 130 Z",
-  /* bat, swung high */
-  "M252 62 L336 -18 L360 4 L278 86 Z",
-].join(" ");
+/* helpers: build silhouettes from primitives so anatomy stays clean */
+function quad(x1, y1, x2, y2, w){
+  const dx = x2 - x1, dy = y2 - y1, L = Math.hypot(dx, dy) || 1;
+  const nx = -dy / L * w / 2, ny = dx / L * w / 2;
+  return `M ${x1+nx} ${y1+ny} L ${x2+nx} ${y2+ny} L ${x2-nx} ${y2-ny} L ${x1-nx} ${y1-ny} Z`;
+}
+function circlePath(cx, cy, r){
+  return `M ${cx} ${cy} m ${-r} 0 a ${r} ${r} 0 1 0 ${2*r} 0 a ${r} ${r} 0 1 0 ${-2*r} 0 Z`;
+}
 
-function sampleSvgPath(d, vw, vh, n, edgeFrac){
+/* bat: real proportions — short round handle, hard shoulders, straight
+   blade, rounded toe. The V-splice is cut out as a particle void. */
+const BAT_D =
+  "M90.5 14 Q90.5 6 100 6 Q109.5 6 109.5 14 L109.5 122 " +
+  "L136 127 L139 138 L139 350 Q139 388 100 388 Q61 388 61 350 L61 138 L64 127 L90.5 122 Z";
+const BAT_SPLICE_D = "M86 130 L114 130 L100 196 Z";
+
+/* batsman: side-on lofted-drive follow-through, built as a limb skeleton —
+   torso leaning into the shot, front leg striding, both arms extended
+   up and through, bat finishing high */
+const MAN_SEGS = [
+  [172,  84, 181, 148, 36],   /* upper torso */
+  [181, 148, 189, 206, 32],   /* lower torso */
+  [193, 206, 250, 268, 25],   /* front thigh */
+  [250, 268, 269, 348, 18],   /* front shin */
+  [266, 350, 302, 360, 13],   /* front foot */
+  [173, 208, 142, 282, 24],   /* back thigh */
+  [142, 282, 128, 356, 17],   /* back shin */
+  [130, 358,  94, 368, 12],   /* back foot */
+  [180, 102, 240,  74, 17],   /* lead upper arm */
+  [240,  74, 294,  46, 14],   /* lead forearm */
+  [166, 112, 224,  96, 15],   /* trail upper arm */
+  [224,  96, 286,  60, 13],   /* trail forearm */
+  [294,  44, 320,  18, 10],   /* bat handle */
+  [320,  18, 374, -34, 26],   /* bat blade, finishing high */
+];
+const MAN_D =
+  MAN_SEGS.map(s => quad(...s)).join(" ") + " " + circlePath(174, 56, 21);
+
+function sampleSvgPath(d, vw, vh, n, edgeFrac, holeD, yMin){
+  yMin = yMin === undefined ? 0 : yMin;
   const NS = "http://www.w3.org/2000/svg";
   const svg = document.createElementNS(NS, "svg");
   svg.setAttribute("width", "0"); svg.setAttribute("height", "0");
@@ -76,21 +101,39 @@ function sampleSvgPath(d, vw, vh, n, edgeFrac){
   const p = document.createElementNS(NS, "path");
   p.setAttribute("d", d);
   svg.appendChild(p);
+  let pHole = null;
+  if (holeD){
+    pHole = document.createElementNS(NS, "path");
+    pHole.setAttribute("d", holeD);
+    svg.appendChild(pHole);
+  }
   document.body.appendChild(svg);
   const path2d = new Path2D(d);
+  const hole2d = holeD ? new Path2D(holeD) : null;
   const mctx = document.createElement("canvas").getContext("2d");
   const pts = [];
   const L = p.getTotalLength();
-  const nEdge = Math.floor(n * edgeFrac);
-  for (let i = 0; i < nEdge; i++){
+  const nEdgeTotal = Math.floor(n * edgeFrac);
+  const nHoleEdge = pHole ? Math.floor(nEdgeTotal * 0.35) : 0;
+  for (let i = 0; i < nEdgeTotal - nHoleEdge; i++){
     const pt = p.getPointAtLength(Math.random() * L);
     pts.push([pt.x + (Math.random() - .5) * 3, pt.y + (Math.random() - .5) * 3]);
+  }
+  if (pHole){
+    const LH = pHole.getTotalLength();
+    for (let i = 0; i < nHoleEdge; i++){
+      const pt = pHole.getPointAtLength(Math.random() * LH);
+      pts.push([pt.x + (Math.random() - .5) * 2, pt.y + (Math.random() - .5) * 2]);
+    }
   }
   let guard = 0;
   while (pts.length < n && guard < n * 400){
     guard++;
-    const x = Math.random() * vw, y = Math.random() * vh - 20;
-    if (mctx.isPointInPath(path2d, x, y)) pts.push([x, y]);
+    const x = Math.random() * vw;
+    const y = yMin + Math.random() * (vh - yMin);
+    if (!mctx.isPointInPath(path2d, x, y)) continue;
+    if (hole2d && mctx.isPointInPath(hole2d, x, y)) continue;
+    pts.push([x, y]);
   }
   while (pts.length < n) pts.push(pts[(Math.random() * pts.length) | 0].slice());
   document.body.removeChild(svg);
@@ -142,6 +185,17 @@ function sampleBall(n){
   return pts;
 }
 
+function rotated(pts, angle){
+  const c = Math.cos(angle), s = Math.sin(angle);
+  let mx = 0, my = 0;
+  for (const [x, y] of pts){ mx += x; my += y; }
+  mx /= pts.length; my /= pts.length;
+  return pts.map(([x, y]) => {
+    const dx = x - mx, dy = y - my;
+    return [mx + dx * c - dy * s, my + dx * s + dy * c];
+  });
+}
+
 /* fit a point cloud into a centered box */
 function fit(pts, cw, ch, scaleFactor){
   let minX = 1e9, maxX = -1e9, minY = 1e9, maxY = -1e9;
@@ -182,8 +236,8 @@ function build(){
   N = mobile ? 760 : 1900;
 
   const ball = fit(sampleBall(N), W, H, 0.74);
-  const bat  = fit(sampleSvgPath(BAT_D, 200, 400, N, 0.34), W, H, 0.8);
-  const man  = fit(sampleSvgPath(MAN_D, 400, 430, N, 0.30), W, H, 0.84);
+  const bat  = fit(rotated(sampleSvgPath(BAT_D, 200, 400, N, 0.36, BAT_SPLICE_D), 0.16), W, H, 0.8);
+  const man  = fit(sampleSvgPath(MAN_D, 400, 440, N, 0.30, null, -60), W, H, 0.86);
   /* shuffle assignment per shape so morphs cross-fade organically */
   shapes = [ball, shuffled(bat), shuffled(man)];
 
