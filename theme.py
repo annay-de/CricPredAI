@@ -30,78 +30,6 @@ PALETTE["red"] = PALETTE["saffron"]    # wicket markers
 PALETTE["gold"] = PALETTE["saffron"]
 
 
-def _pitch_texture_uri() -> str:
-    """A cricket pitch drawn as an inline SVG background: a centered strip
-    with crease markings at both ends and faint outfield mowing stripes.
-    Every tone sits within a few RGB points of black so the void survives."""
-    from urllib.parse import quote
-
-    width, height = 1400, 1800
-    cx = width / 2
-    strip_w = 300
-    stripe_w = 116
-    parts = []
-    # outfield mowing stripes — alternating, imperceptibly light
-    x = 0
-    band = 0
-    while x < width:
-        if band % 2 == 0:
-            parts.append(
-                f'<rect x="{x}" y="0" width="{stripe_w}" height="{height}" '
-                'fill="#ffffff" opacity="0.007"/>'
-            )
-        x += stripe_w
-        band += 1
-    # the pitch strip — warm clay tone, still near-black
-    parts.append(
-        f'<rect x="{cx - strip_w / 2:.0f}" y="0" width="{strip_w}" height="{height}" '
-        'fill="#c8a267" opacity="0.026"/>'
-    )
-    # subtle wear patch on a good length at each end
-    parts.append(
-        f'<ellipse cx="{cx:.0f}" cy="520" rx="70" ry="90" fill="#ffffff" opacity="0.012"/>'
-    )
-    parts.append(
-        f'<ellipse cx="{cx:.0f}" cy="{height - 520}" rx="70" ry="90" fill="#ffffff" opacity="0.012"/>'
-    )
-
-    # crease geometry at both ends (bowling crease, popping crease, returns)
-    def creases(y_bowling: float, direction: int) -> str:
-        y_popping = y_bowling + direction * 72
-        half = strip_w / 2 - 18
-        ret_len = 76 * direction
-        return (
-            f'<line x1="{cx - half:.0f}" y1="{y_bowling}" x2="{cx + half:.0f}" y2="{y_bowling}" '
-            'stroke="#ffffff" stroke-width="2.5" opacity="0.055"/>'
-            f'<line x1="{cx - strip_w / 2:.0f}" y1="{y_popping}" x2="{cx + strip_w / 2:.0f}" y2="{y_popping}" '
-            'stroke="#ffffff" stroke-width="2.5" opacity="0.055"/>'
-            f'<line x1="{cx - half:.0f}" y1="{y_bowling}" x2="{cx - half:.0f}" y2="{y_bowling + ret_len}" '
-            'stroke="#ffffff" stroke-width="2.5" opacity="0.045"/>'
-            f'<line x1="{cx + half:.0f}" y1="{y_bowling}" x2="{cx + half:.0f}" y2="{y_bowling + ret_len}" '
-            'stroke="#ffffff" stroke-width="2.5" opacity="0.045"/>'
-            # stumps: three faint marks on the bowling crease
-            + "".join(
-                f'<line x1="{cx + dx}" y1="{y_bowling - 16 * direction}" x2="{cx + dx}" y2="{y_bowling}" '
-                'stroke="#ffffff" stroke-width="2.5" opacity="0.05"/>'
-                for dx in (-11, 0, 11)
-            )
-        )
-
-    parts.append(creases(310, 1))
-    parts.append(creases(height - 310, -1))
-
-    svg = (
-        f'<svg xmlns="http://www.w3.org/2000/svg" width="{width}" height="{height}" '
-        f'viewBox="0 0 {width} {height}" preserveAspectRatio="xMidYMid slice">'
-        + "".join(parts)
-        + "</svg>"
-    )
-    return "data:image/svg+xml," + quote(svg, safe="")
-
-
-PITCH_TEXTURE_URI = _pitch_texture_uri()
-
-
 APP_CSS = f"""
 <style>
 @import url('https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500&family=Inter:wght@200;400;500;600&family=JetBrains+Mono:wght@400;500&display=swap');
@@ -145,24 +73,13 @@ APP_CSS = f"""
     --t-slide: 250ms cubic-bezier(0.4, 0, 0.2, 1);
 }}
 
-/* ---------- shell: the void, over a night pitch ---------- */
+/* ---------- shell: the void ---------- */
 .stApp {{
     background:
         radial-gradient(ellipse at 75% 8%, rgba(128,82,255,0.05), transparent 55%),
         radial-gradient(ellipse at 12% 85%, rgba(21,132,110,0.04), transparent 60%),
         var(--void);
     color: var(--silver);
-}}
-/* cricket pitch texture — centered strip, creases, mowing stripes; every
-   tone within a few RGB points of black so the void aesthetic survives */
-.stApp::before {{
-    content: "";
-    position: fixed; inset: 0;
-    pointer-events: none;
-    background-image: url("{PITCH_TEXTURE_URI}");
-    background-position: center top;
-    background-size: max(100vw, 900px) auto;
-    background-repeat: repeat-y;
 }}
 header[data-testid="stHeader"], [data-testid="stToolbar"] {{ display: none; }}
 [data-testid="stMainBlockContainer"] {{
